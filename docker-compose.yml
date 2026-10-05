@@ -1,0 +1,53 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: fichesanitaire_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fichesanitaire
+      POSTGRES_USER: fichesanitaire
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - fichesanitaire_pgdata:/var/lib/postgresql/data
+    networks:
+      - fichesanitaire_net
+
+  app:
+    build: .
+    container_name: fichesanitaire_app
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: fichesanitaire
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: fichesanitaire
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_SECURE: ${SMTP_SECURE}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM: ${SMTP_FROM}
+      PORTAL_URL: ${PORTAL_URL}
+      CRON_SCHEDULE: ${CRON_SCHEDULE}
+      CRON_TIMEZONE: ${CRON_TIMEZONE}
+      TRASH_RETENTION_DAYS: ${TRASH_RETENTION_DAYS}
+      BACKUP_RETENTION_HOURS: ${BACKUP_RETENTION_HOURS:-336}
+      PDF_ARCHIVE_DIR: /app/fiches-pdf
+    ports:
+      - "${APP_PORT}:3000"
+    volumes:
+      - fichesanitaire_backups:/app/backups
+      - ./fiches-pdf:/app/fiches-pdf
+    networks:
+      - fichesanitaire_net
+
+networks:
+  fichesanitaire_net:
+
+volumes:
+  fichesanitaire_pgdata:
+  fichesanitaire_backups:

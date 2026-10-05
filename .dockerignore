@@ -1,0 +1,5 @@
+fiches-pdf/
+backup-avant-*/
+node_modules/
+.git/
+.env
