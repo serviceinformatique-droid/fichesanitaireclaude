@@ -149,7 +149,14 @@ function commThreadForViewer(t, user) {
     user.role === 'admin'
       ? t.lastFromRole === 'user' && (!t.adminReadAt || t.lastMessageAt > t.adminReadAt)
       : t.lastFromRole === 'admin' && (!t.userReadAt || t.lastMessageAt > t.userReadAt);
-  return { ...t, unread };
+  // Accusé de lecture : les anciens messages (sans date de lecture enregistrée) sont considérés comme lus
+  // à la dernière ouverture de la conversation par leur destinataire, si elle est postérieure à l'envoi.
+  const messages = (t.messages || []).map((m) => {
+    if (m.readAt) return m;
+    const stamp = m.fromRole === 'admin' ? t.userReadAt : t.adminReadAt;
+    return stamp && stamp >= m.createdAt ? { ...m, readAt: stamp } : m;
+  });
+  return { ...t, messages, unread };
 }
 
 // Destinataires d'une audience (parents ou comptes précis)
@@ -315,6 +322,11 @@ app.post('/api/messages/read', async (req, res) => {
       const now = new Date().toISOString();
       if (user.role === 'admin') t.adminReadAt = now;
       else t.userReadAt = now;
+      // Date de PREMIERE lecture de chaque message reçu (accusé de lecture, build comm-read-20261006)
+      (t.messages || []).forEach((m) => {
+        const received = user.role === 'admin' ? m.fromRole === 'user' : m.fromRole === 'admin';
+        if (received && !m.readAt) m.readAt = now;
+      });
       await writeKv(MESSAGES_KEY, threads);
       res.json({ ok: true });
     });

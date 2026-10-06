@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { Student, Trip } from '../types';
-import { formatDateFr } from './cerfaValidation';
+import { formatDateFr, computeCerfaCompleteness } from './cerfaValidation';
 import { getStoredEstablishmentName } from './storage';
 
 export interface PdfExportOptions {
@@ -146,7 +146,7 @@ export async function generateCerfaPdf(
     drawSectionTitle('RUBRIQUE 1 — RENSEIGNEMENTS SUR L ENFANT');
     doc.setFillColor(248, 250, 252);
     doc.setDrawColor(203, 213, 225);
-    doc.rect(margin, y, contentWidth, 13, 'FD');
+    doc.rect(margin, y, contentWidth, 18.5, 'FD');
 
     doc.setFontSize(7.5);
     doc.setTextColor(40, 40, 40);
@@ -196,7 +196,21 @@ export async function generateCerfaPdf(
       y + 9.5
     );
 
-    y += 15;
+    // Row 3 (build pdf-organisateurs-20261006) : téléphone de l'enfant, n° de sécurité sociale, n° d'élève
+    doc.setFont('helvetica', 'bold');
+    doc.text("Tél. de l'enfant :", margin + 3, y + 14.8);
+    doc.setFont('helvetica', 'normal');
+    doc.text(cerfa.identity?.childMobilePhone || 'Non renseigné', margin + 28, y + 14.8);
+    doc.setFont('helvetica', 'bold');
+    doc.text('N° de sécurité sociale :', margin + 70, y + 14.8);
+    doc.setFont('helvetica', 'normal');
+    doc.text(cerfa.identity?.socialSecurityNumber || 'Non renseigné', margin + 102, y + 14.8);
+    doc.setFont('helvetica', 'bold');
+    doc.text('N° élève :', margin + 150, y + 14.8);
+    doc.setFont('helvetica', 'normal');
+    doc.text(student.internalId || '—', margin + 165, y + 14.8);
+
+    y += 20.5;
 
     // --- RUBRIQUE 2 : VACCINATIONS ---
     drawSectionTitle('RUBRIQUE 2 — VACCINATIONS OBLIGATOIRES & RECOMMANDÉES (CERFA n° 10008*02)');
@@ -754,7 +768,36 @@ export async function generateCerfaPdf(
       /[^a-zA-Z0-9_-]/g,
       '_'
     );
-    const filename = `Fiche_Sanitaire_${sanitizedName}.pdf`;
+    // Fiche NON finalisée : filigrane BROUILLON + bandeau sur chaque page (elle ne peut pas passer pour valable)
+    const completenessPdf = computeCerfaCompleteness(cerfa);
+    const isDraftPdf = student.status !== 'complete' && !completenessPdf.isComplete;
+    if (isDraftPdf) {
+      const missing = (completenessPdf.missingFields || []).slice(0, 4).join(' ; ');
+      const totalPages = doc.getNumberOfPages();
+      for (let p = 1; p <= totalPages; p++) {
+        doc.setPage(p);
+        try {
+          const GState = (doc as any).GState;
+          doc.saveGraphicsState();
+          if (GState) doc.setGState(new GState({ opacity: 0.13 }));
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(185, 28, 28);
+          doc.setFontSize(58);
+          doc.text('BROUILLON', 105, 150, { align: 'center', angle: 35 });
+          doc.setFontSize(20);
+          doc.text('NON SIGNÉE - NON VALABLE', 105, 168, { align: 'center', angle: 35 });
+          doc.restoreGraphicsState();
+        } catch {
+          /* le filigrane est facultatif : le bandeau ci-dessous suffit */
+        }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7);
+        doc.setTextColor(185, 28, 28);
+        const bandeau = doc.splitTextToSize(`FICHE NON FINALISÉE — NON VALABLE${missing ? ' : il manque ' + missing : ''}`, contentWidth).slice(0, 2) as string[];
+        doc.text(bandeau, margin, 287 - (bandeau.length - 1) * 3.2);
+      }
+    }
+    const filename = `${isDraftPdf ? 'BROUILLON_' : ''}Fiche_Sanitaire_${sanitizedName}.pdf`;
     if (asBase64) {
       // Renvoie le PDF encodé en base64 (sans extension data URI), pour un
       // envoi par e-mail en pièce jointe, sans déclencher de téléchargement.

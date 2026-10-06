@@ -21,6 +21,7 @@ export interface ThreadMessage {
   body: string;
   createdAt: string;
   kind?: 'broadcast';
+  readAt?: string; // première lecture par le destinataire (accusé de lecture)
 }
 
 export interface MessageThread {

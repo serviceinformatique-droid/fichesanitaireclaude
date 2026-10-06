@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { Student, Trip, User, DietCategory } from '../types';
 import { exportTripCsv } from '../utils/storage';
 import { exportToPdf } from '../utils/pdfGenerator';
+import { generateOrganizerReportPdf } from '../utils/organizerPdf';
 import { formatDateFr } from '../utils/cerfaValidation';
 import { openOrDownloadDocument } from '../utils/documentViewer';
 import { TripHealthListModal } from './TripHealthListModal';
@@ -67,11 +68,15 @@ export const OrganizerSpace: React.FC<OrganizerSpaceProps> = ({
     setIsExportingPdf(true);
     try {
       const sanitizedTripName = currentTrip.name.replace(/[^a-zA-Z0-9_-]/g, '_');
-      await exportToPdf(reportRef.current, {
+      // VRAI PDF vectoriel (texte sélectionnable, pagination, en-têtes répétés) - build pdf-organisateurs-20261006
+      const ok = await generateOrganizerReportPdf(currentTrip, filteredStudents, {
         filename: `Releve_Sanitaire_${sanitizedTripName}.pdf`,
-        orientation: 'landscape',
-        marginMm: 8,
+        groupByClass: activeFilterView === 'class',
+        filtersText: `Filtres actifs : ${kpiFilter !== 'all' ? `KPI: ${kpiFilter.toUpperCase()}` : 'Tous'} • Classe : ${selectedClassFilter} • Régime : ${selectedDietFilter} • Élèves affichés : ${filteredStudents.length}/${totalEnrolled}`,
+        shown: filteredStudents.length,
+        stats: { totalEnrolled, completeCount, incompleteCount, dpCount, allergyAlertCount },
       });
+      if (!ok) window.print();
     } catch (error) {
       console.error('Erreur export PDF:', error);
       window.print();

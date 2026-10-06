@@ -7,7 +7,7 @@ import {
   getFirstIncompleteSectionId,
   FormSectionId,
 } from '../utils/cerfaValidation';
-import { exportSinglePagePdf } from '../utils/pdfGenerator';
+import { exportSinglePagePdf, generateCerfaPdf } from '../utils/pdfGenerator';
 import { openOrDownloadDocument } from '../utils/documentViewer';
 import {
   ArrowLeft,
@@ -98,11 +98,9 @@ export const CerfaOfficialView: React.FC<CerfaOfficialViewProps> = ({
     setIsExportingPdf(true);
     try {
       const sanitizedName = `${cerfa.identity.lastName}_${cerfa.identity.firstName}`.replace(/[^a-zA-Z0-9_-]/g, '_');
-      const ok = await exportSinglePagePdf(documentRef.current, {
-        filename: `${isDraft ? 'BROUILLON_' : ''}CERFA_Fiche_Sanitaire_${sanitizedName}.pdf`,
-        orientation: 'portrait',
-        marginMm: 4,
-      });
+      // VRAI PDF vectoriel (texte sélectionnable) au lieu d'une copie d'écran - build pdf-organisateurs-20261006
+      void sanitizedName;
+      const ok = await generateCerfaPdf(student, trips, establishmentName, false);
       if (!ok) {
         window.print();
       }

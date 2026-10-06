@@ -164,6 +164,7 @@ export const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ curren
   const [busy, setBusy] = useState(false);
   const [filterText, setFilterText] = useState('');
   const [onlyUnread, setOnlyUnread] = useState(false);
+  const [onlyUnseen, setOnlyUnseen] = useState(false);
 
   // nouveau message (parent : vers l'établissement / admin : diffusion)
   const [newSubject, setNewSubject] = useState('');
@@ -269,6 +270,22 @@ export const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ curren
   };
 
   const selected = threads.find((t) => t.id === selectedId) || null;
+
+  // Si la conversation est affichée à l'écran quand un nouveau message arrive, il est lu : on l'enregistre
+  // (sinon l'expéditeur verrait « pas encore lu » alors que le destinataire a le message sous les yeux).
+  useEffect(() => {
+    if (!open || !selected || !selected.unread) return;
+    const id = selected.id;
+    markThreadRead(currentUser.id, id)
+      .then(() => {
+        setThreads((prev) => prev.map((x) => (x.id === id ? { ...x, unread: false } : x)));
+        setUnread((u) => Math.max(0, u - 1));
+      })
+      .catch(() => {
+        /* sans gravité */
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, selected?.id, selected?.unread, selected?.lastMessageAt]);
 
   const openThread = async (t: MessageThread) => {
     setSelectedId(t.id);
@@ -413,8 +430,16 @@ export const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ curren
     setBusy(false);
   };
 
+  // Messages envoyés par l'établissement et pas encore lus par le parent (build comm-read-20261006)
+  const isUnseenByParent = (t: MessageThread) => {
+    const lm = t.messages[t.messages.length - 1];
+    return Boolean(lm) && lm.fromRole === 'admin' && !lm.readAt;
+  };
+  const unseenCount = threads.filter(isUnseenByParent).length;
+
   const visibleThreads = threads.filter((t) => {
     if (onlyUnread && !t.unread) return false;
+    if (onlyUnseen && !isUnseenByParent(t)) return false;
     const q = filterText.trim().toLowerCase();
     if (!q) return true;
     return (t.subject + ' ' + t.parentName + ' ' + (t.studentLabel || '')).toLowerCase().includes(q);
@@ -451,6 +476,10 @@ export const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ curren
               <input type="checkbox" checked={onlyUnread} onChange={(e) => setOnlyUnread(e.target.checked)} />
               Non lus uniquement
             </label>
+            <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer" data-testid="comm-filter-unseen">
+              <input type="checkbox" checked={onlyUnseen} onChange={(e) => setOnlyUnseen(e.target.checked)} />
+              Envoyés, pas encore lus par le parent ({unseenCount})
+            </label>
           </>
         )}
       </div>
@@ -477,7 +506,18 @@ export const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ curren
                 <span className={`text-xs truncate ${t.unread ? 'font-bold text-slate-900' : 'font-semibold text-slate-700'}`}>
                   {t.subject}
                 </span>
-                <span className="ml-auto text-[10px] text-slate-400 shrink-0">{formatCommDate(t.lastMessageAt)}</span>
+                <span className="ml-auto flex items-center gap-1.5 shrink-0">
+                  {last && (isAdmin ? last.fromRole === 'admin' : last.fromRole === 'user') && (
+                    <span
+                      className={`text-[10px] font-bold ${last.readAt ? 'text-emerald-600' : 'text-amber-600'}`}
+                      title={last.readAt ? `Lu le ${formatCommDate(last.readAt)}` : 'Pas encore lu par le destinataire'}
+                      data-testid="comm-list-readstate"
+                    >
+                      {last.readAt ? '✓✓ Lu' : '✓ Non lu'}
+                    </span>
+                  )}
+                  <span className="text-[10px] text-slate-400">{formatCommDate(t.lastMessageAt)}</span>
+                </span>
               </div>
               {isAdmin && <div className="text-[11px] text-blue-900 truncate">{t.parentName}{t.studentLabel ? ` · ${t.studentLabel}` : ''}</div>}
               <div className={`text-[11px] text-slate-500 truncate ${isAdmin ? 'pr-8' : ''}`}>{last ? last.body : ''}</div>
@@ -545,6 +585,16 @@ export const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ curren
                   {m.kind === 'broadcast' ? ' · message collectif' : ''}
                 </div>
                 <div className="whitespace-pre-wrap leading-relaxed">{m.body}</div>
+                {mine && (
+                  <div
+                    className={`text-[10px] font-semibold mt-1 ${m.readAt ? 'text-emerald-300' : 'text-amber-300'}`}
+                    data-testid="comm-readstate"
+                  >
+                    {m.readAt
+                      ? `✓✓ Lu ${isAdmin ? 'par le parent' : "par l'établissement"} · ${formatCommDate(m.readAt)}`
+                      : `✓ Envoyé · pas encore lu ${isAdmin ? 'par le parent' : "par l'établissement"}`}
+                  </div>
+                )}
                 <div className={`text-[10px] mt-1 flex items-center justify-between gap-4 ${mine ? 'text-blue-200' : 'text-slate-400'}`}>
                   {isAdmin ? (
                     <button

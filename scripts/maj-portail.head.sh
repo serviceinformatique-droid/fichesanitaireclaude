@@ -26,11 +26,11 @@ set -e
 
 APP_DIR="${APP_DIR:-/opt/fichesanitaire-voyages}"
 TOOLS_DIR="${TOOLS_DIR:-/root}"
-BUNDLE_VERSION="2026-10-05-f66ca532"
-PAYLOAD_SHA256="63ed4c2731c5f20cb7ecf0be7ea6b67b484a0eae1df5172c1c0aa70fa88a87e7"
+BUNDLE_VERSION="2026-10-05-c6f3eaea"
+PAYLOAD_SHA256="56c7f981437ecb453948052d1937a123cd984d0808f773da92f5d64cb96d36cf"
 SELF="$0"
 
-PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression"
+PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression patch-messagerie-lecture patch-pdf-organisateurs"
 TOOLS="rattacher-fiche restaurer-sauvegarde"
 
 WORK=""
@@ -57,6 +57,8 @@ describe() {
     patch-messagerie-icone)   echo "messagerie : bouton plus grand, pastille de messages non lus clignotante";;
     patch-pdf-sante)          echo "PDF archive : regime alimentaire et sante en grand";;
     patch-messagerie-suppression) echo "messagerie : supprimer un message ou une conversation (admin)";;
+    patch-messagerie-lecture) echo "messagerie : accuse de lecture (lu / pas encore lu)";;
+    patch-pdf-organisateurs) echo "vrais PDF pour les organisateurs (liste, releve, fiche)";;
   esac
 }
 
@@ -79,6 +81,8 @@ is_installed() {
     patch-messagerie-icone)   grep -q "comm-badge-blink" "$APP_DIR/src/components/CommunicationCenter.tsx" 2>/dev/null;;
     patch-pdf-sante)          grep -q "pdf-sante-20261006" "$APP_DIR/src/utils/pdfGenerator.ts" 2>/dev/null;;
     patch-messagerie-suppression) grep -q "comm-delete-message" "$APP_DIR/src/components/CommunicationCenter.tsx" 2>/dev/null;;
+    patch-messagerie-lecture) grep -q "comm-filter-unseen" "$APP_DIR/src/components/CommunicationCenter.tsx" 2>/dev/null;;
+    patch-pdf-organisateurs) grep -q "pdf-organisateurs-20261006" "$APP_DIR/src/utils/pdfGenerator.ts" 2>/dev/null;;
     *) return 1;;
   esac
 }

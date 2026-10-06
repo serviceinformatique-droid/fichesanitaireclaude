@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Student, Trip } from '../types';
 import { formatDateFr } from '../utils/cerfaValidation';
 import { exportToPdf } from '../utils/pdfGenerator';
+import { generateTripHealthListPdf } from '../utils/organizerPdf';
 import { getStoredEstablishmentName } from '../utils/storage';
 import { openOrDownloadDocument } from '../utils/documentViewer';
 import {
@@ -60,11 +61,20 @@ export const TripHealthListModal: React.FC<TripHealthListModalProps> = ({
       const sortLabel = sortMode === 'class' ? 'ParClasses' : 'Alpha';
       const filename = `Liste_Sanitaire_${sanitizedTripName}_${sortLabel}.pdf`;
 
-      await exportToPdf(tableRef.current, {
+      // VRAI PDF vectoriel (texte sélectionnable, pagination, en-têtes répétés) - build pdf-organisateurs-20261006
+      const ok = await generateTripHealthListPdf(trip, sortedStudents, {
+        sortMode,
         filename,
-        orientation: 'landscape',
-        marginMm: 6,
+        filtersLabel:
+          [
+            filterClass !== 'all' ? `classe ${filterClass}` : '',
+            filterPaiOnly ? 'PAI uniquement' : '',
+            filterAllergiesOnly ? 'allergies uniquement' : '',
+          ]
+            .filter(Boolean)
+            .join(', ') || undefined,
       });
+      if (!ok) window.print();
     } catch (error) {
       console.error('Erreur export PDF:', error);
       window.print();
