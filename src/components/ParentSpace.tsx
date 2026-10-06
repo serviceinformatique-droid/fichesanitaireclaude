@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { RgpdPanel } from './RgpdPanel';
 import { Student, Trip, User, SchoolClass } from '../types';
 import { formatDateFr } from '../utils/cerfaValidation';
 import { openOrDownloadDocument } from '../utils/documentViewer';
@@ -52,6 +53,7 @@ export const ParentSpace: React.FC<ParentSpaceProps> = ({
   onUnregisterTrip,
 }) => {
   const [showAddModal, setShowAddModal] = useState(false);
+  const [parentTab, setParentTab] = useState<'enfants' | 'rgpd'>('enfants');
   const [selectedStudentForHistory, setSelectedStudentForHistory] = useState<Student | null>(null);
   const [tripToUnregister, setTripToUnregister] = useState<{ studentId: string; studentName: string; trip: Trip } | null>(null);
   const [studentForEnrollment, setStudentForEnrollment] = useState<Student | null>(null);
@@ -106,7 +108,38 @@ export const ParentSpace: React.FC<ParentSpaceProps> = ({
 
   return (
     <div className="max-w-6xl mx-auto py-8 px-4 sm:px-6 space-y-8">
-      
+      {/* Onglets de l'espace famille (build rgpd-20261006) */}
+      <div role="tablist" className="flex gap-2 border-b border-slate-200 pb-2" data-testid="parent-tabs">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={parentTab === 'enfants'}
+          onClick={() => setParentTab('enfants')}
+          className={`px-4 py-2 text-xs font-semibold rounded-lg cursor-pointer transition-colors ${
+            parentTab === 'enfants' ? 'bg-blue-900 text-white' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+          }`}
+          data-testid="tab-enfants"
+        >
+          Mes enfants & voyages
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={parentTab === 'rgpd'}
+          onClick={() => setParentTab('rgpd')}
+          className={`px-4 py-2 text-xs font-semibold rounded-lg cursor-pointer transition-colors ${
+            parentTab === 'rgpd' ? 'bg-blue-900 text-white' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+          }`}
+          data-testid="tab-rgpd"
+        >
+          Mes données (RGPD)
+        </button>
+      </div>
+
+      {parentTab === 'rgpd' && <RgpdPanel currentUser={currentUser} students={students} trips={trips} />}
+
+      <div className={parentTab === 'rgpd' ? 'hidden' : 'space-y-8'}>
+
       {/* Welcome Banner */}
       <div className="bg-gradient-to-r from-blue-900 to-slate-900 text-white rounded-2xl p-6 sm:p-8 shadow-md">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -738,6 +771,7 @@ export const ParentSpace: React.FC<ParentSpaceProps> = ({
         </div>
       )}
 
+      </div>
     </div>
   );
 };

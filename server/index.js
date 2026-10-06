@@ -945,6 +945,7 @@ app.post('/api/students/remove', async (req, res) => {
     const { studentId } = req.body;
     if (!studentId) return res.status(400).json({ error: 'studentId manquant' });
     await removeFromArray(STUDENTS_KEY, studentId);
+    await deleteArchivedPdf(studentId); // RGPD : la copie PDF disparaît avec la fiche (build rgpd-20261006)
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -1188,6 +1189,28 @@ async function archiveStudentPdf({ studentId, buffer, lastName, firstName, schoo
     fs.writeFileSync(PDF_INDEX_FILE, JSON.stringify(index, null, 2));
     return rel;
   });
+}
+
+// RGPD : suppression de la copie PDF archivée d'un élève (fiche supprimée définitivement ou purgée de la corbeille)
+// build rgpd-20261006 : avant, le PDF restait sur le serveur après la suppression de la fiche.
+async function deleteArchivedPdf(studentId) {
+  try {
+    return await runPdfArchiveExclusive(async () => {
+      const index = readPdfIndex();
+      const rel = index[studentId];
+      if (!rel) return false;
+      const file = path.join(PDF_ARCHIVE_DIR, rel);
+      try { fs.unlinkSync(file); } catch {}
+      try { fs.rmdirSync(path.dirname(file)); } catch {} // uniquement si le dossier de la classe est vide
+      delete index[studentId];
+      fs.writeFileSync(PDF_INDEX_FILE, JSON.stringify(index, null, 2));
+      console.log(`[rgpd] PDF archivé supprimé avec la fiche : ${rel}`);
+      return true;
+    });
+  } catch (e) {
+    console.error('[rgpd] Suppression du PDF archivé impossible :', e.message);
+    return false;
+  }
 }
 
 app.post('/api/students/send-pdf', async (req, res) => {
@@ -1469,6 +1492,252 @@ cron.schedule(CRON_SCHEDULE, () => {
 }, { timezone: process.env.CRON_TIMEZONE || 'Europe/Paris' });
 console.log(`[relances hebdomadaires] Planifiées : "${CRON_SCHEDULE}" (${process.env.CRON_TIMEZONE || 'Europe/Paris'})`);
 
+// --- Fin d'année scolaire : désinscription de TOUS les élèves de TOUS les voyages (build year-end-20261006) ---
+// Réglage (activé par défaut) : chaque année à partir du 15 juillet, de nuit, une seule fois, uniquement dans une
+// fenêtre de 14 jours (jamais au milieu de l'année scolaire, même si le serveur redémarre ou si le réglage change).
+// Les fiches sanitaires, les comptes et les messages ne sont PAS touchés. Une copie de sécurité des inscriptions est
+// écrite dans le dossier des sauvegardes : l'opération peut être annulée depuis l'administration.
+const YEAR_END_KEY = 'cerfa_year_end_v1';
+const YEAR_END_DEFAULT = { enabled: true, month: 7, day: 15 };
+const YEAR_END_WINDOW_DAYS = 14;
+const YEAR_END_TZ = process.env.CRON_TIMEZONE || 'Europe/Paris';
+
+function yearEndToday() {
+  let s = String(process.env.YEAR_END_FAKE_TODAY || ''); // réservé aux tests (variable d'environnement du serveur)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [fy, fm, fd] = s.split('-').map(Number);
+    return { y: fy, m: fm, d: fd };
+  }
+  s = '';
+  try {
+    s = new Intl.DateTimeFormat('en-CA', { timeZone: YEAR_END_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  } catch {
+    s = '';
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) s = new Date().toISOString().slice(0, 10);
+  const [y, m, d] = s.split('-').map(Number);
+  return { y, m, d };
+}
+
+async function yearEndState() {
+  const s = (await readKv(YEAR_END_KEY)) || {};
+  return { ...s, config: { ...YEAR_END_DEFAULT, ...(s.config || {}) }, last: s.last || null };
+}
+
+function yearEndNextRun(config) {
+  const { y, m, d } = yearEndToday();
+  const today = Date.UTC(y, m - 1, d);
+  let year = y;
+  const startOf = (yy) => Date.UTC(yy, config.month - 1, config.day);
+  // encore dans la fenêtre de cette année : la date « prochaine » reste celle de cette année
+  if (today > startOf(y) + YEAR_END_WINDOW_DAYS * 86400000) year = y + 1;
+  return new Date(startOf(year)).toISOString().slice(0, 10);
+}
+
+async function yearEndRequireAdmin(userId, res) {
+  const users = (await readKv(USERS_KEY)) || [];
+  const user = users.find((u) => u && u.id === userId && u.role === 'admin');
+  if (!user) {
+    res.status(403).json({ error: 'Réservé à l\'administration.' });
+    return null;
+  }
+  return user;
+}
+
+async function yearEndUnregisterAll({ by }) {
+  const release = await lockStudentWrites();
+  try {
+    const students = (await readKv(STUDENTS_KEY)) || [];
+    const targets = students.filter((s) => s && Array.isArray(s.registeredTripIds) && s.registeredTripIds.length > 0);
+    if (targets.length === 0) return { count: 0, file: null };
+    const now = new Date().toISOString();
+    const entries = targets.map((s) => ({ id: s.id, tripIds: s.registeredTripIds }));
+    const file = `desinscription-voyages_${now.replace(/[:.]/g, '-')}.json`;
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    fs.writeFileSync(path.join(BACKUP_DIR, file), JSON.stringify({ at: now, by, entries }));
+    const ids = new Set(entries.map((e) => e.id));
+    const author = by === 'auto' ? 'Système (automatique)' : by;
+    const updated = students.map((s) =>
+      ids.has(s.id)
+        ? {
+            ...s,
+            registeredTripIds: [],
+            // la date de modification change : une page restée ouverte ne pourra pas réinscrire l'élève par erreur (409)
+            updatedAt: now,
+            cerfa: {
+              ...s.cerfa,
+              history: [
+                {
+                  id: 'h-ye-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+                  date: now,
+                  action: "Désinscription des voyages (fin d'année scolaire)",
+                  authorName: author,
+                  authorRole: 'Direction / Administration',
+                },
+                ...((s.cerfa && s.cerfa.history) || []),
+              ],
+            },
+          }
+        : s
+    );
+    await writeKv(STUDENTS_KEY, updated);
+    const st = await yearEndState();
+    st.last = { at: now, by, count: entries.length, file, undoneAt: null };
+    await writeKv(YEAR_END_KEY, st);
+    console.log(`[fin-annee] ${entries.length} élève(s) désinscrit(s) de tous les voyages (${by}) ; copie : ${file}`);
+    return { count: entries.length, file };
+  } finally {
+    release();
+  }
+}
+
+async function yearEndUndo({ by }) {
+  const release = await lockStudentWrites();
+  try {
+    const st = await yearEndState();
+    if (!st.last || st.last.undoneAt || !st.last.file) return { restored: 0, error: 'Aucune désinscription à annuler.' };
+    if (!/^desinscription-voyages_[0-9TZ-]+\.json$/.test(st.last.file)) return { restored: 0, error: 'Copie de sécurité invalide.' };
+    let saved;
+    try {
+      saved = JSON.parse(fs.readFileSync(path.join(BACKUP_DIR, st.last.file), 'utf8'));
+    } catch {
+      return { restored: 0, error: 'Copie de sécurité introuvable : utilisez restaurer-sauvegarde.sh.' };
+    }
+    const byId = new Map((saved.entries || []).map((e) => [e.id, e.tripIds]));
+    const now = new Date().toISOString();
+    let restored = 0;
+    const students = (await readKv(STUDENTS_KEY)) || [];
+    const updated = students.map((s) => {
+      const tripIds = byId.get(s.id);
+      // on ne touche pas à un élève réinscrit depuis (ses inscriptions actuelles sont conservées)
+      if (!tripIds || (s.registeredTripIds || []).length > 0) return s;
+      restored += 1;
+      return {
+        ...s,
+        registeredTripIds: tripIds,
+        updatedAt: now,
+        cerfa: {
+          ...s.cerfa,
+          history: [
+            {
+              id: 'h-ye-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+              date: now,
+              action: "Inscriptions aux voyages rétablies (annulation de la désinscription de fin d'année)",
+              authorName: by,
+              authorRole: 'Direction / Administration',
+            },
+            ...((s.cerfa && s.cerfa.history) || []),
+          ],
+        },
+      };
+    });
+    await writeKv(STUDENTS_KEY, updated);
+    st.last.undoneAt = now;
+    await writeKv(YEAR_END_KEY, st);
+    console.log(`[fin-annee] désinscription annulée par ${by} : ${restored} élève(s) réinscrit(s)`);
+    return { restored };
+  } finally {
+    release();
+  }
+}
+
+async function yearEndTick() {
+  try {
+    const st = await yearEndState();
+    if (!st.config.enabled) return;
+    const { y, m, d } = yearEndToday();
+    const today = Date.UTC(y, m - 1, d);
+    // L'exécution n'a lieu que dans les 14 jours qui suivent la date réglée (de cette année, ou de l'année précédente
+    // pour une date proche du 31 décembre) : jamais au milieu de l'année scolaire.
+    let instance = null;
+    for (const cy of [y, y - 1]) {
+      const days = Math.round((today - Date.UTC(cy, st.config.month - 1, st.config.day)) / 86400000);
+      if (days >= 0 && days <= YEAR_END_WINDOW_DAYS) {
+        instance = cy;
+        break;
+      }
+    }
+    if (instance === null) return; // hors fenêtre
+    if (st.autoYear === instance) return; // déjà fait (ou annulé) pour cette échéance
+    const r = await yearEndUnregisterAll({ by: 'auto' });
+    const fresh = await yearEndState();
+    fresh.autoYear = instance;
+    await writeKv(YEAR_END_KEY, fresh);
+    console.log(`[fin-annee] exécution automatique ${instance} terminée (${r.count} élève(s))`);
+  } catch (e) {
+    console.error('[fin-annee] Erreur :', e);
+  }
+}
+
+app.post('/api/year-end/get', async (req, res) => {
+  try {
+    if (!(await yearEndRequireAdmin(req.body && req.body.userId, res))) return;
+    const st = await yearEndState();
+    res.json({ config: st.config, last: st.last, nextRun: st.config.enabled ? yearEndNextRun(st.config) : null });
+  } catch (e) {
+    console.error('[fin-annee] get :', e);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+app.post('/api/year-end/save', async (req, res) => {
+  try {
+    if (!(await yearEndRequireAdmin(req.body && req.body.userId, res))) return;
+    const { enabled, month, day } = req.body || {};
+    const mo = Number(month);
+    const da = Number(day);
+    const valid =
+      Number.isInteger(mo) && Number.isInteger(da) && mo >= 1 && mo <= 12 && da >= 1 && da <= 31 && new Date(Date.UTC(2027, mo - 1, da)).getUTCMonth() === mo - 1;
+    if (!valid) return res.status(400).json({ error: 'Date invalide.' });
+    const st = await yearEndState();
+    st.config = { enabled: Boolean(enabled), month: mo, day: da };
+    await writeKv(YEAR_END_KEY, st);
+    res.json({ ok: true, config: st.config });
+  } catch (e) {
+    console.error('[fin-annee] save :', e);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+app.post('/api/year-end/run', async (req, res) => {
+  try {
+    const admin = await yearEndRequireAdmin(req.body && req.body.userId, res);
+    if (!admin) return;
+    const r = await yearEndUnregisterAll({ by: admin.name || admin.id });
+    res.json({ ok: true, count: r.count });
+  } catch (e) {
+    console.error('[fin-annee] run :', e);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+app.post('/api/year-end/undo', async (req, res) => {
+  try {
+    const admin = await yearEndRequireAdmin(req.body && req.body.userId, res);
+    if (!admin) return;
+    const r = await yearEndUndo({ by: admin.name || admin.id });
+    if (r.error) return res.status(400).json({ error: r.error });
+    res.json({ ok: true, restored: r.restored });
+  } catch (e) {
+    console.error('[fin-annee] undo :', e);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Réglage consultable par les familles (onglet RGPD) : ne contient aucune donnée personnelle
+app.get('/api/year-end/public', async (req, res) => {
+  try {
+    const st = await yearEndState();
+    res.json({ enabled: st.config.enabled, month: st.config.month, day: st.config.day });
+  } catch (e) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+cron.schedule('10 4 * * *', yearEndTick, { timezone: YEAR_END_TZ });
+setTimeout(yearEndTick, Number(process.env.YEAR_END_STARTUP_DELAY_MS || 45000)); // rattrapage si le serveur était arrêté la nuit prévue (toujours dans la fenêtre de 14 jours)
+console.log(`[fin-annee] Désinscription annuelle des voyages : fenêtre de ${YEAR_END_WINDOW_DAYS} jours à partir du réglage (défaut : ${YEAR_END_DEFAULT.day}/${YEAR_END_DEFAULT.month}).`);
+
 // --- Purge automatique de la corbeille (fiches supprimées depuis plus de 30 jours) ---
 const TRASH_RETENTION_DAYS = Number(process.env.TRASH_RETENTION_DAYS || 30);
 
@@ -1482,7 +1751,11 @@ async function purgeTrash() {
     });
     const purgedCount = students.length - remaining.length;
     if (purgedCount > 0) {
+      const keepIds = new Set(remaining.map((s) => s.id));
+      const purgedStudents = students.filter((s) => !keepIds.has(s.id));
       await writeKv(STUDENTS_KEY, remaining);
+      // RGPD : la copie PDF archivée sur le serveur est supprimée avec la fiche (build rgpd-20261006)
+      for (const s of purgedStudents) await deleteArchivedPdf(s.id);
       console.log(`[corbeille] ${purgedCount} fiche(s) supprimée(s) définitivement (plus de ${TRASH_RETENTION_DAYS} jours en corbeille).`);
     }
   } catch (e) {

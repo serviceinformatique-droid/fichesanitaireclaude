@@ -3,6 +3,7 @@ import { Student, Trip, User, SchoolClass } from '../types';
 import { ReminderTemplate, AutoReminderRunSummary, studentDuplicateKey } from '../utils/storage';
 import { formatDateFr, computeCerfaCompleteness } from '../utils/cerfaValidation';
 import { openOrDownloadDocument } from '../utils/documentViewer';
+import { YearEndPanel } from './YearEndPanel';
 import { PdfRegenerator } from './PdfRegenerator';
 import {
   ShieldCheck,
@@ -1239,6 +1240,11 @@ Cordialement,
       {/* TAB 2: TRIPS MANAGEMENT */}
       {activeTab === 'trips' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Fin d'année scolaire : désinscription de tous les élèves de tous les voyages (build year-end-20261006) */}
+          <div className="lg:col-span-3">
+            <YearEndPanel adminId={currentUser.id} students={students} />
+          </div>
+
           {/* List of trips */}
           <div className="lg:col-span-2 space-y-4">
             <h3 className="text-base font-bold text-slate-900">

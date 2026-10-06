@@ -26,11 +26,11 @@ set -e
 
 APP_DIR="${APP_DIR:-/opt/fichesanitaire-voyages}"
 TOOLS_DIR="${TOOLS_DIR:-/root}"
-BUNDLE_VERSION="2026-10-05-c6f3eaea"
-PAYLOAD_SHA256="56c7f981437ecb453948052d1937a123cd984d0808f773da92f5d64cb96d36cf"
+BUNDLE_VERSION="2026-10-05-69cfa990"
+PAYLOAD_SHA256="5cae1a9f7cd5adacc152924274554e207b62e6711766f7de3109c5d58c069444"
 SELF="$0"
 
-PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression patch-messagerie-lecture patch-pdf-organisateurs"
+PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression patch-messagerie-lecture patch-pdf-organisateurs patch-fin-annee patch-rgpd"
 TOOLS="rattacher-fiche restaurer-sauvegarde"
 
 WORK=""
@@ -59,6 +59,8 @@ describe() {
     patch-messagerie-suppression) echo "messagerie : supprimer un message ou une conversation (admin)";;
     patch-messagerie-lecture) echo "messagerie : accuse de lecture (lu / pas encore lu)";;
     patch-pdf-organisateurs) echo "vrais PDF pour les organisateurs (liste, releve, fiche)";;
+    patch-fin-annee) echo "fin d annee : desinscription de tous les eleves des voyages (auto + manuel + annulation)";;
+    patch-rgpd) echo "onglet RGPD pour les parents, PDF supprimes avec la fiche, polices Google retirees";;
   esac
 }
 
@@ -83,6 +85,8 @@ is_installed() {
     patch-messagerie-suppression) grep -q "comm-delete-message" "$APP_DIR/src/components/CommunicationCenter.tsx" 2>/dev/null;;
     patch-messagerie-lecture) grep -q "comm-filter-unseen" "$APP_DIR/src/components/CommunicationCenter.tsx" 2>/dev/null;;
     patch-pdf-organisateurs) grep -q "pdf-organisateurs-20261006" "$APP_DIR/src/utils/pdfGenerator.ts" 2>/dev/null;;
+    patch-fin-annee) grep -q "/api/year-end/get" "$APP_DIR/server/index.js" 2>/dev/null;;
+    patch-rgpd) grep -q "rgpd-20261006" "$APP_DIR/index.html" 2>/dev/null;;
     *) return 1;;
   esac
 }
