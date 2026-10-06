@@ -783,15 +783,22 @@ export const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ curren
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 left-5 z-40 bg-blue-900 hover:bg-blue-950 text-white rounded-full shadow-2xl px-4 py-3 inline-flex items-center gap-2 text-sm font-semibold cursor-pointer print:hidden"
+        className={`fixed bottom-5 left-5 z-40 bg-blue-900 hover:bg-blue-950 text-white rounded-full shadow-2xl min-h-16 min-w-16 px-5 sm:px-7 py-4 inline-flex items-center justify-center gap-3 text-lg font-bold cursor-pointer print:hidden ${
+          unread > 0 ? 'comm-button-alert' : 'ring-2 ring-white/70'
+        }`}
         aria-label="Ouvrir la messagerie"
+        title={unread > 0 ? `${unread} nouveau${unread > 1 ? 'x' : ''} message${unread > 1 ? 's' : ''}` : 'Messagerie'}
         data-testid="comm-button"
       >
-        <MessageSquare className="w-5 h-5" />
+        <MessageSquare className="w-8 h-8" />
         <span className="hidden sm:inline">Messagerie</span>
         {unread > 0 && (
-          <span className="bg-red-500 text-white text-[11px] font-bold rounded-full min-w-5 h-5 px-1.5 inline-flex items-center justify-center" data-testid="comm-unread">
-            {unread}
+          <span
+            className="comm-badge-blink absolute -top-3 -right-3 bg-red-600 text-white text-lg font-extrabold rounded-full min-w-9 h-9 px-2 inline-flex items-center justify-center ring-4 ring-white shadow-lg"
+            data-testid="comm-unread"
+            aria-label={`${unread} message${unread > 1 ? 's' : ''} non lu${unread > 1 ? 's' : ''}`}
+          >
+            {unread > 99 ? '99+' : unread}
           </span>
         )}
       </button>

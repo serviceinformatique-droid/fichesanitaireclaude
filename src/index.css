@@ -125,3 +125,22 @@
   .suivi-table td:last-child { text-align: left; }
   .suivi-table td:last-child > div { justify-content: flex-start; }
 }
+
+/* ============================================================================
+   Messagerie : bouton agrandi + pastille de messages non lus CLIGNOTANTE
+   (build comm-badge-20261005). Les animations sont coupées pour les personnes qui
+   demandent moins de mouvement (prefers-reduced-motion) : la pastille reste grande et rouge.
+   ============================================================================ */
+@keyframes commBadgeBlink {
+  0%, 100% { transform: scale(1); background-color: #dc2626; color: #ffffff; }
+  50% { transform: scale(1.25); background-color: #facc15; color: #7f1d1d; }
+}
+@keyframes commButtonOutline {
+  0%, 100% { outline-offset: 0; outline-color: rgba(220, 38, 38, 0.95); }
+  50% { outline-offset: 9px; outline-color: rgba(220, 38, 38, 0.1); }
+}
+.comm-badge-blink { animation: commBadgeBlink 1s ease-in-out infinite; }
+.comm-button-alert { outline: 4px solid rgba(220, 38, 38, 0.95); animation: commButtonOutline 1.3s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .comm-badge-blink, .comm-button-alert { animation: none; }
+}

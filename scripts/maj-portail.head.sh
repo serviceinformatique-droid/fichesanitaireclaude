@@ -26,11 +26,11 @@ set -e
 
 APP_DIR="${APP_DIR:-/opt/fichesanitaire-voyages}"
 TOOLS_DIR="${TOOLS_DIR:-/root}"
-BUNDLE_VERSION="2026-10-05-98ee3d7d"
-PAYLOAD_SHA256="b219c1f6c444938ce4af023e16fabf839ddd612337c2c01b58ed259d1fdf5cbd"
+BUNDLE_VERSION="2026-10-05-b39aa45b"
+PAYLOAD_SHA256="8107b3a976748693293e9a188f44d4d5612839cf705f6061f79d67f53719e70a"
 SELF="$0"
 
-PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf"
+PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone"
 TOOLS="rattacher-fiche restaurer-sauvegarde"
 
 WORK=""
@@ -54,6 +54,7 @@ describe() {
     patch-pieces-jointes)     echo "photos reduites, PDF limites (pieces jointes)";;
     patch-etablissement)      echo "nom de l'etablissement affiche sur toutes les fiches, PDF et listes";;
     patch-regeneration-pdf)   echo "bouton : regenerer les PDF archives avec le nom enregistre";;
+    patch-messagerie-icone)   echo "messagerie : bouton plus grand, pastille de messages non lus clignotante";;
   esac
 }
 
@@ -73,6 +74,7 @@ is_installed() {
     patch-pieces-jointes)     grep -q "attachmentSizeGuard" "$APP_DIR/server/index.js" 2>/dev/null;;
     patch-etablissement)      grep -q "etablissement-20261005" "$APP_DIR/src/utils/storage.ts" 2>/dev/null;;
     patch-regeneration-pdf)   grep -q "PdfRegenerator" "$APP_DIR/src/components/AdminSpace.tsx" 2>/dev/null;;
+    patch-messagerie-icone)   grep -q "comm-badge-blink" "$APP_DIR/src/components/CommunicationCenter.tsx" 2>/dev/null;;
     *) return 1;;
   esac
 }
