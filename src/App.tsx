@@ -908,6 +908,7 @@ export default function App() {
             onAddStudent={handleAddChild}
             onRegisterTrip={handleRegisterTrip}
             onUnregisterTrip={handleUnregisterTrip}
+            onUpdateUserPassword={handleUpdateUserPassword}
           />
         )}
 

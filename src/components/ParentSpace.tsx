@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { RgpdPanel } from './RgpdPanel';
 import { Student, Trip, User, SchoolClass } from '../types';
+import { KeyRound } from 'lucide-react';
+import { ParentPasswordModal } from './ParentPasswordModal';
 import { formatDateFr } from '../utils/cerfaValidation';
 import { openOrDownloadDocument } from '../utils/documentViewer';
 import { checkStudentDuplicate } from '../utils/storage';
@@ -39,6 +41,7 @@ interface ParentSpaceProps {
   }) => void;
   onRegisterTrip: (studentId: string, tripId: string) => void;
   onUnregisterTrip: (studentId: string, tripId: string) => void;
+  onUpdateUserPassword?: (userId: string, newPassword: string) => void | Promise<void>;
 }
 
 export const ParentSpace: React.FC<ParentSpaceProps> = ({
@@ -51,8 +54,10 @@ export const ParentSpace: React.FC<ParentSpaceProps> = ({
   onAddStudent,
   onRegisterTrip,
   onUnregisterTrip,
+  onUpdateUserPassword,
 }) => {
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [parentTab, setParentTab] = useState<'enfants' | 'rgpd'>('enfants');
   const [selectedStudentForHistory, setSelectedStudentForHistory] = useState<Student | null>(null);
   const [tripToUnregister, setTripToUnregister] = useState<{ studentId: string; studentName: string; trip: Trip } | null>(null);
@@ -155,13 +160,33 @@ export const ParentSpace: React.FC<ParentSpaceProps> = ({
             </p>
           </div>
 
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-xl font-semibold text-xs shadow-md transition-all shrink-0 cursor-pointer"
-          >
-            <UserPlus className="w-4 h-4" />
-            + Ajouter un enfant
-          </button>
+          {/* Bouton « Changer mon mot de passe » sous « Ajouter un enfant » (build parent-password-20261006) */}
+          <div className="flex flex-col items-stretch gap-3 shrink-0">
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-xl font-semibold text-xs shadow-md transition-all shrink-0 cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4" />
+              + Ajouter un enfant
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowPasswordModal(true)}
+              className="flex items-center justify-center gap-2 bg-sky-500 hover:bg-sky-400 text-white px-4 py-3 rounded-xl font-bold text-sm shadow-lg ring-2 ring-white/90 transition-all cursor-pointer"
+              data-testid="parent-password-button"
+            >
+              <KeyRound className="w-5 h-5" />
+              Changer mon mot de passe
+            </button>
+            {showPasswordModal && (
+              <ParentPasswordModal
+                currentUser={currentUser}
+                onUpdateUserPassword={onUpdateUserPassword}
+                onClose={() => setShowPasswordModal(false)}
+              />
+            )}
+          </div>
         </div>
       </div>
 

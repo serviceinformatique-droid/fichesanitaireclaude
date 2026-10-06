@@ -26,11 +26,11 @@ set -e
 
 APP_DIR="${APP_DIR:-/opt/fichesanitaire-voyages}"
 TOOLS_DIR="${TOOLS_DIR:-/root}"
-BUNDLE_VERSION="2026-10-05-d8a2e137"
-PAYLOAD_SHA256="0ca79a4f5586dd9646bf4a587559f41d53e3be756a63abcedfc980f416276e9a"
+BUNDLE_VERSION="2026-10-05-2a38b75f"
+PAYLOAD_SHA256="b0f5caedc42c4f62db88d3cdffaeec3fae824d26186b88d01620d14a5babb496"
 SELF="$0"
 
-PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression patch-messagerie-lecture patch-pdf-organisateurs patch-fin-annee patch-rgpd patch-fleches patch-corrections"
+PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression patch-messagerie-lecture patch-pdf-organisateurs patch-fin-annee patch-rgpd patch-fleches patch-corrections patch-mot-de-passe-parent"
 TOOLS="rattacher-fiche restaurer-sauvegarde"
 
 WORK=""
@@ -63,6 +63,7 @@ describe() {
     patch-rgpd) echo "onglet RGPD pour les parents, PDF supprimes avec la fiche, polices Google retirees";;
     patch-fleches) echo "fleches haut / bas pour aller tout en haut ou tout en bas de la page";;
     patch-corrections) echo "audit : PDF (voyages, symboles, textes longs), texte RGPD exact";;
+    patch-mot-de-passe-parent) echo "bouton bleu Changer mon mot de passe dans l Espace Famille";;
   esac
 }
 
@@ -91,6 +92,7 @@ is_installed() {
     patch-rgpd) grep -q "rgpd-20261006" "$APP_DIR/index.html" 2>/dev/null;;
     patch-fleches) grep -q "ScrollButtons" "$APP_DIR/src/main.tsx" 2>/dev/null;;
     patch-corrections) [ -f "$APP_DIR/src/utils/pdfSafe.ts" ];;
+    patch-mot-de-passe-parent) [ -f "$APP_DIR/src/components/ParentPasswordModal.tsx" ];;
     *) return 1;;
   esac
 }
