@@ -3,7 +3,7 @@ import { ShieldCheck, Download, Database, Users, Clock, Scale, Mail, FileText, L
 import { Student, Trip, User } from '../types';
 import { getStoredEstablishmentName } from '../utils/storage';
 
-console.log('[fichesanitaire] build rgpd-20261006');
+console.log('[fichesanitaire] build rgpd-20261006 (texte corrigé : audit-fixes-20261006)');
 
 interface RgpdPanelProps {
   currentUser: User;
@@ -282,11 +282,11 @@ export const RgpdPanel: React.FC<RgpdPanelProps> = ({ currentUser, students, tri
             <strong>La direction / administration de l'établissement</strong> : l'ensemble des fiches et des comptes, pour gérer les voyages et vous aider.
           </li>
           <li>
-            <strong>Les professeurs accompagnateurs</strong> du voyage auquel votre enfant est inscrit : la liste sanitaire du séjour (régime, allergies,
-            PAI, contact d'urgence) et la fiche de leurs élèves partants uniquement.
+            <strong>Les professeurs accompagnateurs</strong> du voyage auquel votre enfant est inscrit : le portail leur affiche la liste sanitaire du séjour (régime, allergies,
+            PAI, contact d'urgence) et la fiche de leurs élèves partants.
           </li>
           <li>
-            <strong>Aucune autre famille</strong> : un parent ne voit jamais les enfants ou les messages d'une autre famille.
+            <strong>Aucune autre famille</strong> : le portail n'affiche à une famille que ses propres enfants et ses propres messages.
           </li>
           <li>
             Les <strong>relances par e-mail</strong> (fiche incomplète) sont envoyées depuis la messagerie électronique de l'établissement : elles contiennent le

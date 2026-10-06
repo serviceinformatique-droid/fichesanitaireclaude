@@ -57,6 +57,16 @@ elif [ "$m" -gt 0 ]; then
   exit 1
 fi
 
+# Ce correctif REMPLACE des plages entieres de code (route d'enregistrement d'un eleve, fonction de stockage).
+# Applique APRES des correctifs plus recents qui y ont ajoute du code, il effacerait leurs modifications.
+for mk in studentVersionGuard parentIdGuard attachmentSizeGuard saveStudentChecked; do
+  if grep -q "$mk" "$APP_DIR/server/index.js" "$APP_DIR/src/utils/storage.ts" "$APP_DIR/src/App.tsx" 2>/dev/null; then
+    echo "ERREUR : ce correctif doit etre applique AVANT les correctifs plus recents (code detecte : $mk)."
+    echo "Il aurait efface leurs modifications. Aucun fichier n'a ete modifie."
+    exit 1
+  fi
+done
+
 # --- Fonctions utilitaires -------------------------------------------------
 count_occ() { OLD="$2" perl -0777 -ne 'my $c = () = /\Q$ENV{OLD}\E/g; print $c' "$1"; }
 

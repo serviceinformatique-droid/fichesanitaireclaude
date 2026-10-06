@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf';
+import { installPdfSafety } from './pdfSafe';
 import { Student, Trip } from '../types';
 import { formatDateFr, computeCerfaCompleteness } from './cerfaValidation';
 import { getStoredEstablishmentName } from './storage';
@@ -30,6 +31,7 @@ export async function generateCerfaPdf(
       unit: 'mm',
       format: 'a4',
     });
+    installPdfSafety(doc); // build audit-fixes-20261006 : symboles non pris en charge, mots trop longs
 
     const enrolledTrips = trips.filter((t) => student.registeredTripIds?.includes(t.id));
     const pageWidth = 210;
@@ -609,29 +611,43 @@ export async function generateCerfaPdf(
       y += cardH + 4;
     }
 
-    // --- VOYAGES SCOLAIRES ASSOCIES (if enrolled) ---
+    // --- VOYAGES SCOLAIRES ASSOCIES (if enrolled) --- (build audit-fixes-20261006 : tous les voyages, sans chevauchement)
     if (enrolledTrips.length > 0) {
       drawSectionTitle('SÉJOURS & VOYAGES SCOLAIRES ASSOCIÉS');
+      const shownTrips = enrolledTrips.slice(0, 6);
+      const tripBlocks = shownTrips.map((trip) => {
+        const detail = `Destination : ${trip.destination} | Du ${formatDateFr(trip.startDate)} au ${formatDateFr(trip.endDate)}${
+          trip.organizerName ? ' | Organisateur : ' + trip.organizerName : ''
+        }`;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.8);
+        const lines = doc.splitTextToSize(detail, contentWidth - 8) as string[];
+        return { trip, lines };
+      });
+      const more = enrolledTrips.length - shownTrips.length;
+      const tripBoxHeight = tripBlocks.reduce((h, b) => h + 4.6 + b.lines.length * 3.1 + 1, 2) + (more > 0 ? 4 : 0);
+      ensureSpace(tripBoxHeight + 2);
       doc.setFillColor(240, 249, 255);
       doc.setDrawColor(186, 230, 253);
-      const tripBoxHeight = Math.min(enrolledTrips.length * 5.5 + 2, 13);
       doc.rect(margin, y, contentWidth, tripBoxHeight, 'FD');
-
-      enrolledTrips.slice(0, 2).forEach((trip, idx) => {
-        const tripY = y + idx * 5.5 + 3.8;
+      let ty = y + 2;
+      tripBlocks.forEach((b) => {
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(6.8);
+        doc.setFontSize(7.6);
         doc.setTextColor(3, 105, 161);
-        doc.text(`✈ ${trip.name}`, margin + 3, tripY);
-
+        doc.text(String(b.trip.name || ''), margin + 3, ty + 3.2);
         doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.8);
         doc.setTextColor(70, 70, 70);
-        doc.text(
-          `Destination : ${trip.destination} | Du ${formatDateFr(trip.startDate)} au ${formatDateFr(trip.endDate)} | Org : ${trip.organizerName}`,
-          margin + 45,
-          tripY
-        );
+        doc.text(b.lines, margin + 3, ty + 6.6);
+        ty += 4.6 + b.lines.length * 3.1 + 1;
       });
+      if (more > 0) {
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(6.5);
+        doc.setTextColor(90, 90, 90);
+        doc.text(`... et ${more} autre${more > 1 ? 's' : ''} voyage${more > 1 ? 's' : ''}`, margin + 3, ty + 2);
+      }
       y += tripBoxHeight + 2;
     }
 
@@ -735,7 +751,7 @@ export async function generateCerfaPdf(
       } catch (imgErr) {
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(21, 128, 61);
-        doc.text('✓ Signé électroniquement', signBoxX + 4, signBoxY + 6.5);
+        doc.text('Signé électroniquement', signBoxX + 4, signBoxY + 6.5);
       }
     } else {
       doc.setFont('helvetica', 'italic');

@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import { Student, Trip } from '../types';
 import { formatDateFr } from './cerfaValidation';
 import { getStoredEstablishmentName } from './storage';
+import { installPdfSafety } from './pdfSafe';
 
 console.log('[fichesanitaire] build pdf-organisateurs-20261006');
 
@@ -58,14 +59,35 @@ const safeName = (v: string) => String(v || '').replace(/[^a-zA-Z0-9_-]/g, '_');
 // ----------------------------------------------------------------------------------------------
 // Moteur de tableau
 // ----------------------------------------------------------------------------------------------
+const MAX_CELL_LINES = 40;
+
 function wrapped(doc: jsPDF, cell: Cell, colW: number): { text: string; line: TextLine }[][] {
   // retourne, pour chaque ligne logique, ses lignes visuelles
-  return (cell.lines || []).map((l) => {
+  const all = (cell.lines || []).map((l) => {
     doc.setFont('helvetica', fontOf(l));
     doc.setFontSize(l.size || 8);
     const parts = doc.splitTextToSize(String(l.text || ''), Math.max(6, colW - PAD_X * 2)) as string[];
     return parts.map((t) => ({ text: t, line: l }));
   });
+  // Garde-fou : une cellule démesurée (texte libre très long) ne doit jamais dépasser la hauteur d'une page,
+  // sinon la fin du texte serait coupée sans prévenir ; on s'arrête et on renvoie à la fiche.
+  let total = 0;
+  let cut = false;
+  const capped = all.map((vis) =>
+    vis.filter(() => {
+      total += 1;
+      if (total > MAX_CELL_LINES) {
+        cut = true;
+        return false;
+      }
+      return true;
+    })
+  );
+  if (cut) {
+    const last = capped.filter((v) => v.length > 0).pop();
+    if (last) last[last.length - 1] = { text: '... (suite : voir la fiche sanitaire)', line: { text: '', italic: true, size: 7, color: GRAY } };
+  }
+  return capped;
 }
 
 function cellHeight(doc: jsPDF, cell: Cell, colW: number): number {
@@ -283,6 +305,7 @@ export async function generateTripHealthListPdf(trip: Trip, students: Student[],
   try {
     const establishment = (opts.establishmentName || getStoredEstablishmentName() || '').trim();
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    installPdfSafety(doc);
 
     const list = [...students];
     if (opts.sortMode === 'class') list.sort((a, b) => a.schoolClass.localeCompare(b.schoolClass, 'fr') || byName(a, b));
@@ -425,6 +448,7 @@ export async function generateOrganizerReportPdf(trip: Trip, students: Student[]
   try {
     const establishment = (opts.establishmentName || getStoredEstablishmentName() || '').trim();
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    installPdfSafety(doc);
 
     const list = [...students];
     if (opts.groupByClass) list.sort((a, b) => a.schoolClass.localeCompare(b.schoolClass, 'fr') || byName(a, b));

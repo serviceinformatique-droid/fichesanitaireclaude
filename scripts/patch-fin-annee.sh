@@ -52,6 +52,9 @@ command -v perl >/dev/null || { echo "ERREUR : perl est requis (apt install -y p
 SRV="$APP_DIR/server/index.js"
 ADM="$APP_DIR/src/components/AdminSpace.tsx"
 
+grep -q "function lockStudentWrites" "$SRV" || { echo "ERREUR : le controle anti-ecrasement (patch-anti-ecrasement) n'est pas installe : appliquez-le d'abord."; exit 1; }
+grep -q "const STUDENTS_KEY" "$SRV" && grep -q "const USERS_KEY" "$SRV" || { echo "ERREUR : serveur incompatible (STUDENTS_KEY / USERS_KEY introuvables)."; exit 1; }
+
 m=0
 grep -q "/api/year-end/get" "$SRV" && m=$((m+1))
 grep -q "YearEndPanel" "$ADM" && m=$((m+1))

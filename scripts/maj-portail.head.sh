@@ -26,11 +26,11 @@ set -e
 
 APP_DIR="${APP_DIR:-/opt/fichesanitaire-voyages}"
 TOOLS_DIR="${TOOLS_DIR:-/root}"
-BUNDLE_VERSION="2026-10-05-f6424cba"
-PAYLOAD_SHA256="e09fc791c05e2236574ffc3e203d062f51f2e2bcb3c2209354ff0a2bf63d2566"
+BUNDLE_VERSION="2026-10-05-d8a2e137"
+PAYLOAD_SHA256="0ca79a4f5586dd9646bf4a587559f41d53e3be756a63abcedfc980f416276e9a"
 SELF="$0"
 
-PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression patch-messagerie-lecture patch-pdf-organisateurs patch-fin-annee patch-rgpd patch-fleches"
+PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression patch-messagerie-lecture patch-pdf-organisateurs patch-fin-annee patch-rgpd patch-fleches patch-corrections"
 TOOLS="rattacher-fiche restaurer-sauvegarde"
 
 WORK=""
@@ -62,6 +62,7 @@ describe() {
     patch-fin-annee) echo "fin d annee : desinscription de tous les eleves des voyages (auto + manuel + annulation)";;
     patch-rgpd) echo "onglet RGPD pour les parents, PDF supprimes avec la fiche, polices Google retirees";;
     patch-fleches) echo "fleches haut / bas pour aller tout en haut ou tout en bas de la page";;
+    patch-corrections) echo "audit : PDF (voyages, symboles, textes longs), texte RGPD exact";;
   esac
 }
 
@@ -89,6 +90,7 @@ is_installed() {
     patch-fin-annee) grep -q "/api/year-end/get" "$APP_DIR/server/index.js" 2>/dev/null;;
     patch-rgpd) grep -q "rgpd-20261006" "$APP_DIR/index.html" 2>/dev/null;;
     patch-fleches) grep -q "ScrollButtons" "$APP_DIR/src/main.tsx" 2>/dev/null;;
+    patch-corrections) [ -f "$APP_DIR/src/utils/pdfSafe.ts" ];;
     *) return 1;;
   esac
 }
@@ -568,6 +570,8 @@ repo_readme() {
 # Remplit $1 (vide d'abord, sauf .git) avec le projet, les scripts et la documentation
 stage_tree() {
   local d="$1" f p
+  # garde-fou : on ne vide que le dossier de travail Git (jamais un dossier quelconque)
+  [ -n "$d" ] && [ -d "$d/.git" ] || { echo ">>> GitHub : dossier de travail invalide ($d) : rien n'est efface."; return 1; }
   find "$d" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
   source_files | while read -r f; do
     is_text "$f" || continue
@@ -605,6 +609,15 @@ push_github() {
   fi
   gh_env
   local stg="$GIT_STAGING" nb msg inst=0 p url
+  # garde-fou : GIT_STAGING doit etre un chemin a au moins 3 niveaux (ex. /opt/readme/git), different du dossier
+  # de l'application ou de l'un de ses parents ; le script efface le contenu de ce dossier a chaque push.
+  case "$stg" in
+    /*/*/*) ;;
+    *) echo ">>> GitHub : GIT_STAGING invalide ($stg) : push ignore (ex. valide : /opt/readme/git)."; return 0;;
+  esac
+  case "$APP_DIR/" in
+    "$stg"/*) echo ">>> GitHub : GIT_STAGING ($stg) contient le dossier de l'application : push ignore."; return 0;;
+  esac
   gitq() { git -C "$stg" -c user.name="maj-portail" -c user.email="maj-portail@fichesanitaire.local" -c core.hooksPath=/dev/null "$@"; }
   url="$(echo "$GITHUB_REPO" | sed 's#\.git$##')"
   mkdir -p "$(dirname "$stg")"
