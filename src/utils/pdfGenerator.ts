@@ -15,13 +15,47 @@ export interface PdfExportOptions {
  * on exactly ONE single page with pure vector rendering in jsPDF.
  * Clean, compact, with prominent dietary & medical allergies highlights.
  */
+// build onepage-20261006 : fiche sur une seule page (mesure + reduction automatique)
 export async function generateCerfaPdf(
   student: Student,
   trips: Trip[] = [],
   establishmentName?: string,
-  asBase64: boolean = false
+  asBase64: boolean = false,
+  fitOptions?: { fit?: number; measure?: boolean; noBreaks?: boolean }
 ): Promise<boolean | string> {
   try {
+    // build onepage-20261006 : la fiche tient sur UNE page. On mesure la hauteur réellement nécessaire, puis on réduit
+    // l'ensemble (textes, blocs, interlignes) juste assez ; aucune information n'est coupée. Si même à l'échelle minimale
+    // la fiche ne tient pas, elle garde sa mise en page normale sur plusieurs pages (jamais de texte illisible).
+    if (!fitOptions) {
+      const MIN_FIT = 0.72;
+      const BOTTOM = 297 - 14; // hauteur utile en mm (marge basse de 14 mm pour le pied de page)
+      const fits = async (k: number): Promise<boolean> => {
+        const yEnd = (await generateCerfaPdf(student, trips, establishmentName, false, { fit: k, measure: true, noBreaks: true })) as unknown as number;
+        return typeof yEnd === 'number' && yEnd * k <= BOTTOM;
+      };
+      let k = 1;
+      if (!(await fits(1))) {
+        if (await fits(MIN_FIT)) {
+          let lo = MIN_FIT; // tient
+          let hi = 1; // ne tient pas
+          for (let i = 0; i < 6; i++) {
+            const mid = (lo + hi) / 2;
+            if (await fits(mid)) lo = mid;
+            else hi = mid;
+          }
+          k = Math.floor(lo * 1000) / 1000;
+        } else {
+          k = 0; // trop long pour une page lisible : mise en page normale sur plusieurs pages
+        }
+      }
+      return generateCerfaPdf(student, trips, establishmentName, asBase64, k > 0 ? { fit: k, noBreaks: true } : { fit: 1, noBreaks: false });
+    }
+    const FIT = fitOptions.fit ?? 1;
+    const MEASURE = !!fitOptions.measure;
+    const NO_BREAKS = !!fitOptions.noBreaks;
+    const FX = 1 / FIT; // la mise en page est calculée sur une feuille « élargie » puis réduite d'un bloc
+
     const { cerfa } = student;
     const resolvedEstablishment =
       establishmentName?.trim() || getStoredEstablishmentName() || student.schoolEstablishment?.trim();
@@ -33,11 +67,17 @@ export async function generateCerfaPdf(
     });
     installPdfSafety(doc); // build audit-fixes-20261006 : symboles non pris en charge, mots trop longs
 
+    // Réduction d'un bloc : l'origine de la transformation est en bas à gauche de la page, on recale donc sur le haut
+    if (FIT < 1) {
+      doc.saveGraphicsState();
+      doc.setCurrentTransformationMatrix(new (doc as any).Matrix(FIT, 0, 0, FIT, 0, 297 * doc.internal.scaleFactor * (1 - FIT)));
+    }
+
     const enrolledTrips = trips.filter((t) => student.registeredTripIds?.includes(t.id));
-    const pageWidth = 210;
-    const margin = 6;
-    const contentWidth = pageWidth - margin * 2; // 198 mm
-    let y = 5;
+    const pageWidth = 210 * FX;
+    const margin = 6 * FX;
+    const contentWidth = pageWidth - margin * 2; // 198 mm une fois réduit
+    let y = 5 * FX;
 
     // --- 1. HEADER BANNER ---
     // French tricolor bar
@@ -76,8 +116,8 @@ export async function generateCerfaPdf(
     y += 12;
 
     // --- build pdf-sante-20261006 : aides de mise en page (saut de page, texte à la ligne, pastilles) ---
-    const PAGE_H = 297;
-    const BOTTOM_MARGIN = 14;
+    const PAGE_H = 297 * FX;
+    const BOTTOM_MARGIN = 14 * FX;
     const newPage = () => {
       doc.addPage();
       y = 8;
@@ -92,7 +132,7 @@ export async function generateCerfaPdf(
       y += 5;
     };
     const ensureSpace = (h: number) => {
-      if (y + h > PAGE_H - BOTTOM_MARGIN) newPage();
+      if (!NO_BREAKS && y + h > PAGE_H - BOTTOM_MARGIN) newPage();
     };
     const lineMm = (pt: number) => pt * 0.3528 * 1.28;
     const wrapLines = (text: string, width: number, pt: number, style: 'normal' | 'bold' | 'italic' = 'normal'): string[] => {
@@ -132,14 +172,14 @@ export async function generateCerfaPdf(
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7.5);
       doc.setTextColor(30, 58, 138);
-      doc.text(title, margin + 4, y + 3.5);
+      doc.text(title, margin + 4 * FX, y + 3.5);
       y += 5;
 
       if (subtitle) {
         doc.setFont('helvetica', 'italic');
         doc.setFontSize(6);
         doc.setTextColor(110, 110, 110);
-        doc.text(subtitle, margin + 4, y);
+        doc.text(subtitle, margin + 4 * FX, y);
         y += 2.5;
       }
     };
@@ -155,38 +195,38 @@ export async function generateCerfaPdf(
 
     // Row 1
     doc.setFont('helvetica', 'bold');
-    doc.text('Nom :', margin + 3, y + 4.5);
+    doc.text('Nom :', margin + 3 * FX, y + 4.5);
     doc.setFont('helvetica', 'normal');
-    doc.text(cerfa.identity?.lastName || '—', margin + 14, y + 4.5);
+    doc.text(cerfa.identity?.lastName || '—', margin + 14 * FX, y + 4.5);
 
     doc.setFont('helvetica', 'bold');
-    doc.text('Prénom :', margin + 55, y + 4.5);
+    doc.text('Prénom :', margin + 55 * FX, y + 4.5);
     doc.setFont('helvetica', 'normal');
-    doc.text(cerfa.identity?.firstName || '—', margin + 70, y + 4.5);
+    doc.text(cerfa.identity?.firstName || '—', margin + 70 * FX, y + 4.5);
 
     doc.setFont('helvetica', 'bold');
-    doc.text('Né(e) le :', margin + 115, y + 4.5);
+    doc.text('Né(e) le :', margin + 115 * FX, y + 4.5);
     doc.setFont('helvetica', 'normal');
-    doc.text(cerfa.identity?.birthDate ? formatDateFr(cerfa.identity.birthDate) : '—', margin + 130, y + 4.5);
+    doc.text(cerfa.identity?.birthDate ? formatDateFr(cerfa.identity.birthDate) : '—', margin + 130 * FX, y + 4.5);
 
     doc.setFont('helvetica', 'bold');
-    doc.text('Sexe :', margin + 165, y + 4.5);
+    doc.text('Sexe :', margin + 165 * FX, y + 4.5);
     doc.setFont('helvetica', 'normal');
-    doc.text(cerfa.identity?.gender || '—', margin + 176, y + 4.5);
+    doc.text(cerfa.identity?.gender || '—', margin + 176 * FX, y + 4.5);
 
     // Row 2
     doc.setFont('helvetica', 'bold');
-    doc.text('Établissement :', margin + 3, y + 9.5);
+    doc.text('Établissement :', margin + 3 * FX, y + 9.5);
     doc.setFont('helvetica', 'normal');
-    doc.text(resolvedEstablishment, margin + 26, y + 9.5);
+    doc.text(resolvedEstablishment, margin + 26 * FX, y + 9.5);
 
     doc.setFont('helvetica', 'bold');
-    doc.text('Classe :', margin + 115, y + 9.5);
+    doc.text('Classe :', margin + 115 * FX, y + 9.5);
     doc.setFont('helvetica', 'normal');
-    doc.text(student.schoolClass || '—', margin + 130, y + 9.5);
+    doc.text(student.schoolClass || '—', margin + 130 * FX, y + 9.5);
 
     doc.setFont('helvetica', 'bold');
-    doc.text('Régime :', margin + 155, y + 9.5);
+    doc.text('Régime :', margin + 155 * FX, y + 9.5);
     doc.setFont('helvetica', 'normal');
     doc.text(
       student.boardingStatus === 'DP'
@@ -194,23 +234,23 @@ export async function generateCerfaPdf(
         : student.boardingStatus === 'Interne'
         ? 'Interne'
         : 'Externe',
-      margin + 170,
+      margin + 170 * FX,
       y + 9.5
     );
 
     // Row 3 (build pdf-organisateurs-20261006) : téléphone de l'enfant, n° de sécurité sociale, n° d'élève
     doc.setFont('helvetica', 'bold');
-    doc.text("Tél. de l'enfant :", margin + 3, y + 14.8);
+    doc.text("Tél. de l'enfant :", margin + 3 * FX, y + 14.8);
     doc.setFont('helvetica', 'normal');
-    doc.text(cerfa.identity?.childMobilePhone || 'Non renseigné', margin + 28, y + 14.8);
+    doc.text(cerfa.identity?.childMobilePhone || 'Non renseigné', margin + 28 * FX, y + 14.8);
     doc.setFont('helvetica', 'bold');
-    doc.text('N° de sécurité sociale :', margin + 70, y + 14.8);
+    doc.text('N° de sécurité sociale :', margin + 70 * FX, y + 14.8);
     doc.setFont('helvetica', 'normal');
-    doc.text(cerfa.identity?.socialSecurityNumber || 'Non renseigné', margin + 102, y + 14.8);
+    doc.text(cerfa.identity?.socialSecurityNumber || 'Non renseigné', margin + 102 * FX, y + 14.8);
     doc.setFont('helvetica', 'bold');
-    doc.text('N° élève :', margin + 150, y + 14.8);
+    doc.text('N° élève :', margin + 150 * FX, y + 14.8);
     doc.setFont('helvetica', 'normal');
-    doc.text(student.internalId || '—', margin + 165, y + 14.8);
+    doc.text(student.internalId || '—', margin + 165 * FX, y + 14.8);
 
     y += 20.5;
 
@@ -219,8 +259,8 @@ export async function generateCerfaPdf(
 
     // Vaccination table header
     const col1 = margin;
-    const col2 = margin + 85;
-    const col3 = margin + 135;
+    const col2 = margin + 85 * FX;
+    const col3 = margin + 135 * FX;
     const colWidth = contentWidth;
 
     doc.setFillColor(226, 232, 240);
@@ -276,7 +316,7 @@ export async function generateCerfaPdf(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(6.5);
     doc.setTextColor(50, 50, 50);
-    doc.text('Vaccins recommandés :', margin + 3, y + 3);
+    doc.text('Vaccins recommandés :', margin + 3 * FX, y + 3);
     doc.setFont('helvetica', 'normal');
     const recList = [
       `BCG : ${cerfa.vaccinations?.recommandes?.bcg?.done ? `Oui (${formatDateFr(cerfa.vaccinations.recommandes.bcg.date)})` : 'Non'}`,
@@ -284,12 +324,12 @@ export async function generateCerfaPdf(
       `ROR : ${cerfa.vaccinations?.recommandes?.ror?.done ? `Oui (${formatDateFr(cerfa.vaccinations.recommandes.ror.date)})` : 'Non'}`,
       `Coqueluche : ${cerfa.vaccinations?.recommandes?.coqueluche?.done ? `Oui (${formatDateFr(cerfa.vaccinations.recommandes.coqueluche.date)})` : 'Non'}`,
     ];
-    doc.text(recList.join('   |   '), margin + 34, y + 3);
+    doc.text(recList.join('   |   '), margin + 34 * FX, y + 3);
 
     if (cerfa.vaccinations?.hasContraindication) {
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(185, 28, 28);
-      doc.text(` | ATTENTION - Contre-indication : ${cerfa.vaccinations.contraindicationDetails || 'Certificat médical'}`, margin + 130, y + 3);
+      doc.text(` | ATTENTION - Contre-indication : ${cerfa.vaccinations.contraindicationDetails || 'Certificat médical'}`, margin + 130 * FX, y + 3);
     }
     y += 6;
 
@@ -321,23 +361,23 @@ export async function generateCerfaPdf(
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
       doc.setTextColor(30, 41, 59);
-      doc.text("L'ENFANT SUIT-IL UN TRAITEMENT MÉDICAL ?", margin + 4, y + 6.2);
+      doc.text("L'ENFANT SUIT-IL UN TRAITEMENT MÉDICAL ?", margin + 4 * FX, y + 6.2);
       drawPill(hasTreat ? 'OUI' : 'NON', margin + contentWidth - 4, y + 2.2, 6.2, hasTreat ? [217, 119, 6] : [100, 116, 139], [255, 255, 255], 10);
       if (hasTreat) {
         doc.setFont('helvetica', 'italic');
         doc.setFontSize(7);
         doc.setTextColor(120, 113, 108);
-        doc.text('Détails du traitement prescrit :', margin + 4, y + 11.5);
+        doc.text('Détails du traitement prescrit :', margin + 4 * FX, y + 11.5);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(10);
         doc.setTextColor(120, 53, 15);
-        doc.text(treatLines, margin + 4, y + 16);
+        doc.text(treatLines, margin + 4 * FX, y + 16);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7.5);
         doc.setTextColor(87, 83, 78);
         doc.text(
           `Ordonnance médicale jointe au dossier : ${mi.hasPrescriptionAttached ? 'OUI' : 'NON'}`,
-          margin + 4,
+          margin + 4 * FX,
           y + h - 2.2
         );
       }
@@ -363,21 +403,21 @@ export async function generateCerfaPdf(
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9);
         doc.setTextColor(127, 29, 29);
-        doc.text("PROJET D'ACCUEIL INDIVIDUALISÉ (P.A.I.)", margin + 4, y + 6.2);
+        doc.text("PROJET D'ACCUEIL INDIVIDUALISÉ (P.A.I.)", margin + 4 * FX, y + 6.2);
         drawPill('OUI — PROTOCOLE ACTIF', margin + contentWidth - 4, y + 2, 6.6, [220, 38, 38], [255, 255, 255], 10);
         doc.setFont('helvetica', 'italic');
         doc.setFontSize(7);
         doc.setTextColor(120, 113, 108);
-        doc.text("Pathologie et conduite d'urgence PAI :", margin + 4, y + 11.8);
+        doc.text("Pathologie et conduite d'urgence PAI :", margin + 4 * FX, y + 11.8);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(10.5);
         doc.setTextColor(153, 27, 27);
-        doc.text(paiLines, margin + 4, y + 16.6);
+        doc.text(paiLines, margin + 4 * FX, y + 16.6);
         if (docLines.length) {
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(7.5);
           doc.setTextColor(87, 83, 78);
-          doc.text(docLines, margin + 4, y + 16.6 + paiLines.length * lineMm(10.5) + 1.2);
+          doc.text(docLines, margin + 4 * FX, y + 16.6 + paiLines.length * lineMm(10.5) + 1.2);
         }
         y += h + 2.5;
       } else {
@@ -386,10 +426,10 @@ export async function generateCerfaPdf(
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);
         doc.setTextColor(51, 65, 85);
-        doc.text("PROJET D'ACCUEIL INDIVIDUALISÉ (P.A.I.) : NON", margin + 4, y + 4.9);
+        doc.text("PROJET D'ACCUEIL INDIVIDUALISÉ (P.A.I.) : NON", margin + 4 * FX, y + 4.9);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(100, 116, 139);
-        doc.text("Aucun protocole médical d'urgence requis pour cet élève", margin + 82, y + 4.9);
+        doc.text("Aucun protocole médical d'urgence requis pour cet élève", margin + 82 * FX, y + 4.9);
         y += 10;
       }
     }
@@ -449,7 +489,7 @@ export async function generateCerfaPdf(
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(7.5);
         doc.setTextColor(153, 27, 27);
-        doc.text("CAUSE DE L'ALLERGIE ET CONDUITE À TENIR :", margin + 4, y + 5);
+        doc.text("CAUSE DE L'ALLERGIE ET CONDUITE À TENIR :", margin + 4 * FX, y + 5);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7);
         doc.setTextColor(87, 83, 78);
@@ -462,7 +502,7 @@ export async function generateCerfaPdf(
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(10);
         doc.setTextColor(127, 29, 29);
-        doc.text(cl, margin + 4, y + 10.2);
+        doc.text(cl, margin + 4 * FX, y + 10.2);
         y += h + 2.5;
       }
     }
@@ -487,20 +527,20 @@ export async function generateCerfaPdf(
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7.2);
       doc.setTextColor(71, 85, 105);
-      doc.text('ANTÉCÉDENTS MÉDICAUX (maladies déjà eues) :', margin + 4, y + 4.6);
+      doc.text('ANTÉCÉDENTS MÉDICAUX (maladies déjà eues) :', margin + 4 * FX, y + 4.6);
       doc.setFont('helvetica', ants.length ? 'bold' : 'normal');
       doc.setFontSize(9);
       doc.setTextColor(ants.length ? 30 : 100, ants.length ? 41 : 116, ants.length ? 59 : 139);
-      doc.text(anteLines, margin + 4, y + 9);
+      doc.text(anteLines, margin + 4 * FX, y + 9);
       const y2 = y + 9 + anteLines.length * lineMm(9) + 1.8;
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7.2);
       doc.setTextColor(71, 85, 105);
-      doc.text('DIFFICULTÉS DE SANTÉ (maladie, accident, hospitalisation, précautions) :', margin + 4, y2 + 2.4);
+      doc.text('DIFFICULTÉS DE SANTÉ (maladie, accident, hospitalisation, précautions) :', margin + 4 * FX, y2 + 2.4);
       doc.setFont('helvetica', mi.healthDifficulties ? 'bold' : 'normal');
       doc.setFontSize(9);
       doc.setTextColor(mi.healthDifficulties ? 30 : 100, mi.healthDifficulties ? 41 : 116, mi.healthDifficulties ? 59 : 139);
-      doc.text(diffLines, margin + 4, y2 + 7);
+      doc.text(diffLines, margin + 4 * FX, y2 + 7);
       y += h + 3;
     }
 
@@ -540,7 +580,7 @@ export async function generateCerfaPdf(
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9);
         doc.setTextColor(255, 255, 255);
-        doc.text('4 — RÉGIME ALIMENTAIRE & ALLERGIES ALIMENTAIRES', margin + 4, y + 4.9);
+        doc.text('4 — RÉGIME ALIMENTAIRE & ALLERGIES ALIMENTAIRES', margin + 4 * FX, y + 4.9);
         drawPill('RÉGIME OU ALLERGIE ACTIVE', margin + contentWidth - 3, y + 1.1, 4.8, [253, 224, 71], [113, 63, 18], 7.5);
         y += 9;
       } else {
@@ -552,27 +592,27 @@ export async function generateCerfaPdf(
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
       doc.setTextColor(isRestrictedDiet ? 146 : 51, isRestrictedDiet ? 64 : 65, isRestrictedDiet ? 14 : 85);
-      doc.text('Régime alimentaire sélectionné :', margin + 4, y + 6);
+      doc.text('Régime alimentaire sélectionné :', margin + 4 * FX, y + 6);
       const dietPt = dietLabel.length > 18 ? 12.5 : 16;
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(dietPt);
       const dietW = Math.max(40, doc.getTextWidth(dietLabel) + 12);
       doc.setFillColor(isRestrictedDiet ? 180 : 100, isRestrictedDiet ? 83 : 116, isRestrictedDiet ? 9 : 139);
-      doc.roundedRect(margin + 4, y + 9, Math.min(dietW, cardW - 8), 12, 2, 2, 'F');
+      doc.roundedRect(margin + 4 * FX, y + 9, Math.min(dietW, cardW - 8), 12, 2, 2, 'F');
       doc.setTextColor(255, 255, 255);
-      doc.text(dietLabel, margin + 4 + Math.min(dietW, cardW - 8) / 2, y + 9 + 6 + dietPt * 0.3528 * 0.34, { align: 'center' });
+      doc.text(dietLabel, margin + 4 * FX + Math.min(dietW, cardW - 8) / 2, y + 9 + 6 + dietPt * 0.3528 * 0.34, { align: 'center' });
       if (details) {
         doc.setFillColor(255, 255, 255);
         doc.setDrawColor(253, 230, 138);
-        doc.roundedRect(margin + 4, y + 24, cardW - 8, 4.5 + detLines.length * lineMm(8.5), 1, 1, 'FD');
+        doc.roundedRect(margin + 4 * FX, y + 24, cardW - 8, 4.5 + detLines.length * lineMm(8.5), 1, 1, 'FD');
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(7.5);
         doc.setTextColor(120, 53, 15);
-        doc.text('Précisions :', margin + 6, y + 27.4);
+        doc.text('Précisions :', margin + 6 * FX, y + 27.4);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8.5);
         doc.setTextColor(63, 63, 70);
-        doc.text(detLines, margin + 6, y + 31.4);
+        doc.text(detLines, margin + 6 * FX, y + 31.4);
       }
 
       // carte de droite : allergie alimentaire & évictions
@@ -635,18 +675,18 @@ export async function generateCerfaPdf(
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(7.6);
         doc.setTextColor(3, 105, 161);
-        doc.text(String(b.trip.name || ''), margin + 3, ty + 3.2);
+        doc.text(String(b.trip.name || ''), margin + 3 * FX, ty + 3.2);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(6.8);
         doc.setTextColor(70, 70, 70);
-        doc.text(b.lines, margin + 3, ty + 6.6);
+        doc.text(b.lines, margin + 3 * FX, ty + 6.6);
         ty += 4.6 + b.lines.length * 3.1 + 1;
       });
       if (more > 0) {
         doc.setFont('helvetica', 'italic');
         doc.setFontSize(6.5);
         doc.setTextColor(90, 90, 90);
-        doc.text(`... et ${more} autre${more > 1 ? 's' : ''} voyage${more > 1 ? 's' : ''}`, margin + 3, ty + 2);
+        doc.text(`... et ${more} autre${more > 1 ? 's' : ''} voyage${more > 1 ? 's' : ''}`, margin + 3 * FX, ty + 2);
       }
       y += tripBoxHeight + 2;
     }
@@ -701,7 +741,7 @@ export async function generateCerfaPdf(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(6.8);
     doc.setTextColor(30, 58, 138);
-    doc.text('ENGAGEMENT DU RESPONSABLE LÉGAL :', margin + 3, y + 3.8);
+    doc.text('ENGAGEMENT DU RESPONSABLE LÉGAL :', margin + 3 * FX, y + 3.8);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6);
@@ -709,7 +749,7 @@ export async function generateCerfaPdf(
     const legalDeclaration =
       'Je soussigné(e), responsable légal de l enfant, atteste sur l honneur l exactitude des renseignements portés sur la présente fiche sanitaire de liaison et m engage à signaler toute modification éventuelle survenant avant le départ (affection survenue, traitement en cours). J autorise le responsable du séjour ou son représentant à faire pratiquer toute intervention médicale ou chirurgicale d urgence si l état de santé de l enfant l exigeait.';
     const splitDecl = doc.splitTextToSize(legalDeclaration, contentWidth - 6);
-    doc.text(splitDecl, margin + 3, y + 7);
+    doc.text(splitDecl, margin + 3 * FX, y + 7);
 
     const signY = y + 15.5;
     doc.setFont('helvetica', 'bold');
@@ -719,13 +759,13 @@ export async function generateCerfaPdf(
       `Fait par : ${cerfa.signature?.signedByName || cerfa.legalGuardian?.fullName || 'Responsable légal'} | Date : ${
         cerfa.signature?.signedDate ? formatDateFr(cerfa.signature.signedDate) : formatDateFr(new Date().toISOString())
       }`,
-      margin + 3,
+      margin + 3 * FX,
       signY
     );
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6);
     doc.setTextColor(100, 100, 100);
-    doc.text(`Version archivée : v${cerfa.signature?.version || 1} • Statut : ${student.status === 'complete' ? 'Dossier complet' : 'Dossier en cours'}`, margin + 3, signY + 4);
+    doc.text(`Version archivée : v${cerfa.signature?.version || 1} • Statut : ${student.status === 'complete' ? 'Dossier complet' : 'Dossier en cours'}`, margin + 3 * FX, signY + 4);
 
     // Signature box
     const signBoxWidth = 42;
@@ -759,6 +799,8 @@ export async function generateCerfaPdf(
       doc.text('(En attente de signature)', signBoxX + 4, signBoxY + 6.5);
     }
 
+    if (MEASURE) return (y + 25) as unknown as boolean; // passe de mesure : hauteur utilisée (bloc signature compris), rien n'est enregistré
+    if (FIT < 1) doc.restoreGraphicsState(); // le pied de page et le filigrane sont écrits à l'échelle réelle de la page
     // --- PIED DE PAGE sur chaque page (build pdf-sante-20261006) ---
     const pageCount = doc.getNumberOfPages();
     for (let p = 1; p <= pageCount; p++) {
@@ -768,12 +810,12 @@ export async function generateCerfaPdf(
       doc.setTextColor(140, 140, 140);
       doc.text(
         `Fiche Sanitaire de Liaison officielle — ${resolvedEstablishment} — Document confidentiel`,
-        margin,
+        6,
         291
       );
       doc.text(
         `Émis le ${new Date().toLocaleDateString('fr-FR')}${pageCount > 1 ? ` — page ${p}/${pageCount}` : ''}`,
-        pageWidth - margin,
+        210 - 6,
         291,
         { align: 'right' }
       );
@@ -809,8 +851,8 @@ export async function generateCerfaPdf(
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(7);
         doc.setTextColor(185, 28, 28);
-        const bandeau = doc.splitTextToSize(`FICHE NON FINALISÉE — NON VALABLE${missing ? ' : il manque ' + missing : ''}`, contentWidth).slice(0, 2) as string[];
-        doc.text(bandeau, margin, 287 - (bandeau.length - 1) * 3.2);
+        const bandeau = doc.splitTextToSize(`FICHE NON FINALISÉE — NON VALABLE${missing ? ' : il manque ' + missing : ''}`, 198).slice(0, 2) as string[];
+        doc.text(bandeau, 6, 287 - (bandeau.length - 1) * 3.2);
       }
     }
     const filename = `${isDraftPdf ? 'BROUILLON_' : ''}Fiche_Sanitaire_${sanitizedName}.pdf`;

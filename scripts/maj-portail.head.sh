@@ -26,11 +26,11 @@ set -e
 
 APP_DIR="${APP_DIR:-/opt/fichesanitaire-voyages}"
 TOOLS_DIR="${TOOLS_DIR:-/root}"
-BUNDLE_VERSION="2026-10-05-2a38b75f"
-PAYLOAD_SHA256="b0f5caedc42c4f62db88d3cdffaeec3fae824d26186b88d01620d14a5babb496"
+BUNDLE_VERSION="2026-10-05-9d03cc33"
+PAYLOAD_SHA256="e22d73d5e610aa1a3aefa9fa1ecb645766c5fa68daaee59127822b359d78ec15"
 SELF="$0"
 
-PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression patch-messagerie-lecture patch-pdf-organisateurs patch-fin-annee patch-rgpd patch-fleches patch-corrections patch-mot-de-passe-parent"
+PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression patch-messagerie-lecture patch-pdf-organisateurs patch-fin-annee patch-rgpd patch-fleches patch-corrections patch-mot-de-passe-parent patch-fiche-une-page"
 TOOLS="rattacher-fiche restaurer-sauvegarde"
 
 WORK=""
@@ -64,6 +64,7 @@ describe() {
     patch-fleches) echo "fleches haut / bas pour aller tout en haut ou tout en bas de la page";;
     patch-corrections) echo "audit : PDF (voyages, symboles, textes longs), texte RGPD exact";;
     patch-mot-de-passe-parent) echo "bouton bleu Changer mon mot de passe dans l Espace Famille";;
+    patch-fiche-une-page) echo "fiche sanitaire PDF sur une seule page (reduction automatique)";;
   esac
 }
 
@@ -93,6 +94,7 @@ is_installed() {
     patch-fleches) grep -q "ScrollButtons" "$APP_DIR/src/main.tsx" 2>/dev/null;;
     patch-corrections) [ -f "$APP_DIR/src/utils/pdfSafe.ts" ];;
     patch-mot-de-passe-parent) [ -f "$APP_DIR/src/components/ParentPasswordModal.tsx" ];;
+    patch-fiche-une-page) grep -q "onepage-20261006" "$APP_DIR/src/utils/pdfGenerator.ts" 2>/dev/null;;
     *) return 1;;
   esac
 }
