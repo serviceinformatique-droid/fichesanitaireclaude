@@ -92,6 +92,13 @@ export const markThreadRead = (userId: string, threadId: string) =>
 export const deleteThread = (userId: string, threadId: string) =>
   api<{ ok: boolean }>('/api/messages/delete', { userId, threadId });
 
+export const deleteMessage = (userId: string, threadId: string, messageId: string) =>
+  api<{ ok: boolean; threadDeleted: boolean; thread: MessageThread | null }>('/api/messages/delete-message', {
+    userId,
+    threadId,
+    messageId,
+  });
+
 export const broadcastMessage = (p: { userId: string; audience: Audience; subject: string; body: string }) =>
   api<{ count: number }>('/api/messages/broadcast', p);
 

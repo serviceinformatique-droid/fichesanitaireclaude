@@ -26,11 +26,11 @@ set -e
 
 APP_DIR="${APP_DIR:-/opt/fichesanitaire-voyages}"
 TOOLS_DIR="${TOOLS_DIR:-/root}"
-BUNDLE_VERSION="2026-10-05-b39aa45b"
-PAYLOAD_SHA256="8107b3a976748693293e9a188f44d4d5612839cf705f6061f79d67f53719e70a"
+BUNDLE_VERSION="2026-10-05-f66ca532"
+PAYLOAD_SHA256="63ed4c2731c5f20cb7ecf0be7ea6b67b484a0eae1df5172c1c0aa70fa88a87e7"
 SELF="$0"
 
-PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone"
+PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression"
 TOOLS="rattacher-fiche restaurer-sauvegarde"
 
 WORK=""
@@ -55,6 +55,8 @@ describe() {
     patch-etablissement)      echo "nom de l'etablissement affiche sur toutes les fiches, PDF et listes";;
     patch-regeneration-pdf)   echo "bouton : regenerer les PDF archives avec le nom enregistre";;
     patch-messagerie-icone)   echo "messagerie : bouton plus grand, pastille de messages non lus clignotante";;
+    patch-pdf-sante)          echo "PDF archive : regime alimentaire et sante en grand";;
+    patch-messagerie-suppression) echo "messagerie : supprimer un message ou une conversation (admin)";;
   esac
 }
 
@@ -75,6 +77,8 @@ is_installed() {
     patch-etablissement)      grep -q "etablissement-20261005" "$APP_DIR/src/utils/storage.ts" 2>/dev/null;;
     patch-regeneration-pdf)   grep -q "PdfRegenerator" "$APP_DIR/src/components/AdminSpace.tsx" 2>/dev/null;;
     patch-messagerie-icone)   grep -q "comm-badge-blink" "$APP_DIR/src/components/CommunicationCenter.tsx" 2>/dev/null;;
+    patch-pdf-sante)          grep -q "pdf-sante-20261006" "$APP_DIR/src/utils/pdfGenerator.ts" 2>/dev/null;;
+    patch-messagerie-suppression) grep -q "comm-delete-message" "$APP_DIR/src/components/CommunicationCenter.tsx" 2>/dev/null;;
     *) return 1;;
   esac
 }

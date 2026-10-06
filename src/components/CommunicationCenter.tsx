@@ -25,6 +25,7 @@ import {
   deactivatePopup,
   deletePopup,
   deleteThread,
+  deleteMessage,
   formatCommDate,
   listPopups,
   listThreads,
@@ -361,6 +362,24 @@ export const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ curren
     }
   };
 
+  // Suppression d'UN message précis d'une conversation (administration) - build comm-delete-20261006
+  const handleDeleteMessage = async (t: MessageThread, m: MessageThread['messages'][number]) => {
+    const preview = m.body.length > 90 ? m.body.slice(0, 90) + '…' : m.body;
+    if (!window.confirm(`Supprimer définitivement ce message ?\n\n« ${preview} »`)) return;
+    try {
+      const r = await deleteMessage(currentUser.id, t.id, m.id);
+      if (r.threadDeleted || !r.thread) {
+        setThreads((prev) => prev.filter((x) => x.id !== t.id));
+        if (selectedId === t.id) setSelectedId(null);
+      } else {
+        const updated = r.thread;
+        setThreads((prev) => prev.map((x) => (x.id === t.id ? { ...x, ...updated } : x)));
+      }
+    } catch (e: any) {
+      setError(e.message || 'Suppression impossible.');
+    }
+  };
+
   const handleSendPopup = async () => {
     if (!pTitle.trim() || !pBody.trim()) {
       setError('Merci de renseigner un titre et un message.');
@@ -445,9 +464,9 @@ export const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ curren
         {visibleThreads.map((t) => {
           const last = t.messages[t.messages.length - 1];
           return (
+            <div key={t.id} className="relative">
             <button
               type="button"
-              key={t.id}
               onClick={() => openThread(t)}
               className={`w-full text-left px-3 py-2.5 border-b border-slate-100 hover:bg-blue-50 cursor-pointer ${
                 selectedId === t.id ? 'bg-blue-50' : ''
@@ -461,8 +480,21 @@ export const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ curren
                 <span className="ml-auto text-[10px] text-slate-400 shrink-0">{formatCommDate(t.lastMessageAt)}</span>
               </div>
               {isAdmin && <div className="text-[11px] text-blue-900 truncate">{t.parentName}{t.studentLabel ? ` · ${t.studentLabel}` : ''}</div>}
-              <div className="text-[11px] text-slate-500 truncate">{last ? last.body : ''}</div>
+              <div className={`text-[11px] text-slate-500 truncate ${isAdmin ? 'pr-8' : ''}`}>{last ? last.body : ''}</div>
             </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => handleDeleteThread(t)}
+                className="absolute right-2 bottom-2 p-1.5 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                title="Supprimer cette conversation"
+                aria-label="Supprimer cette conversation"
+                data-testid="comm-delete-thread"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            </div>
           );
         })}
       </div>
@@ -513,8 +545,25 @@ export const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ curren
                   {m.kind === 'broadcast' ? ' · message collectif' : ''}
                 </div>
                 <div className="whitespace-pre-wrap leading-relaxed">{m.body}</div>
-                <div className={`text-[10px] mt-1 text-right ${mine ? 'text-blue-200' : 'text-slate-400'}`}>
-                  {formatCommDate(m.createdAt)}
+                <div className={`text-[10px] mt-1 flex items-center justify-between gap-4 ${mine ? 'text-blue-200' : 'text-slate-400'}`}>
+                  {isAdmin ? (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteMessage(selected, m)}
+                      className={`inline-flex items-center gap-1 font-semibold cursor-pointer ${
+                        mine ? 'text-blue-100 hover:text-white' : 'text-slate-500 hover:text-red-600'
+                      }`}
+                      title="Supprimer ce message"
+                      aria-label="Supprimer ce message"
+                      data-testid="comm-delete-message"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Supprimer
+                    </button>
+                  ) : (
+                    <span />
+                  )}
+                  <span>{formatCommDate(m.createdAt)}</span>
                 </div>
               </div>
             </div>

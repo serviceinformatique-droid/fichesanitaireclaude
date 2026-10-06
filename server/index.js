@@ -339,6 +339,40 @@ app.post('/api/messages/delete', async (req, res) => {
   }
 });
 
+// --- Suppression d'UN message d'une conversation (administrateur) - build comm-delete-20261006 ---
+app.post('/api/messages/delete-message', async (req, res) => {
+  try {
+    await withCommLock(async () => {
+      const { userId, threadId, messageId } = req.body || {};
+      const admin = await commRequireAdmin(userId, res);
+      if (!admin) return;
+      const threads = (await readKv(MESSAGES_KEY)) || [];
+      const idx = threads.findIndex((t) => t.id === threadId);
+      if (idx < 0) return res.status(404).json({ error: 'Conversation introuvable.' });
+      const t = threads[idx];
+      const all = t.messages || [];
+      const remaining = all.filter((m) => m.id !== messageId);
+      if (remaining.length === all.length) return res.status(404).json({ error: 'Message introuvable.' });
+      console.log(`[messagerie] message ${messageId} supprimé de la conversation ${threadId} par ${admin.id}`);
+      if (remaining.length === 0) {
+        threads.splice(idx, 1);
+        await writeKv(MESSAGES_KEY, threads);
+        return res.json({ ok: true, threadDeleted: true, thread: null });
+      }
+      const last = remaining[remaining.length - 1];
+      t.messages = remaining;
+      t.lastMessageAt = last.createdAt || t.lastMessageAt;
+      t.lastFromRole = last.fromRole === 'admin' ? 'admin' : 'user';
+      threads[idx] = t;
+      await writeKv(MESSAGES_KEY, threads);
+      res.json({ ok: true, threadDeleted: false, thread: commThreadForViewer(t, admin) });
+    });
+  } catch (e) {
+    console.error('[messagerie] delete-message :', e);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 app.post('/api/messages/broadcast', async (req, res) => {
   try {
     await withCommLock(async () => {
