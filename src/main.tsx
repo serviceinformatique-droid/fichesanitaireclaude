@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import { ScrollButtons } from './components/ScrollButtons';
 import './index.css';
 import { bootstrapFromServer } from './utils/storage';
 import { AnonymousPopups } from './components/AnonymousPopups';
@@ -15,6 +16,7 @@ async function start() {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <App />
+      <ScrollButtons />
       {isMagicLinkAccess && <AnonymousPopups />}
     </StrictMode>,
   );
