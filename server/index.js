@@ -561,9 +561,9 @@ const WELCOME_DEFAULT_BODY = `Bonjour {prenom},
 
 Bienvenue sur le portail des fiches sanitaires de liaison de l'Ensemble Scolaire Notre Dame des Missions.
 
-Merci de créer un compte par enfant. Chaque enfant a sa propre fiche sanitaire, et la signature d'un seul responsable légal suffit pour la valider : il n'est donc pas nécessaire que les deux parents créent un compte ni signent la fiche.
+Un seul compte suffit pour toute la famille : ne créez pas un compte par enfant. Pour chaque enfant, cliquez sur le bouton « + Ajouter un enfant » (en haut de votre espace ; « Ajouter mon premier enfant » la première fois) : sa fiche sanitaire est créée dans votre compte, et vous retrouvez toutes vos fiches dans « Mes enfants ».
 
-Si vous avez plusieurs enfants, utilisez une adresse e-mail différente pour chaque compte (une adresse e-mail ne peut servir qu'à un seul compte).
+Chaque enfant a sa propre fiche sanitaire, et la signature d'un seul responsable légal suffit pour la valider : il n'est donc pas nécessaire que les deux parents créent un compte ni signent la fiche.
 
 Si la fiche de votre enfant a déjà été créée par l'autre responsable légal, ne la recréez pas : le portail vous le signalera.
 
@@ -579,6 +579,30 @@ async function commGetWelcomeConfig() {
     subject: c.subject || WELCOME_DEFAULT_SUBJECT,
     body: c.body || WELCOME_DEFAULT_BODY,
   };
+}
+
+// build welcome-text-20261006 : met à jour le texte d'accueil ENREGISTRÉ (s'il contient encore l'ancienne consigne
+// « un compte par enfant »), une seule fois et sans toucher aux autres modifications de l'administration.
+async function welcomeTextMigration() {
+  try {
+    const c = await readKv(WELCOME_KEY);
+    if (!c || typeof c.body !== 'string') return; // aucun texte personnalisé : le nouveau texte par défaut s'applique
+    if (!/créer un compte par enfant|adresse e-mail différente pour chaque compte/.test(c.body)) return; // déjà à jour
+    const OLD_P1 = 'Merci de créer un compte par enfant. Chaque enfant a sa propre fiche sanitaire, et la signature d\'un seul responsable légal suffit pour la valider : il n\'est donc pas nécessaire que les deux parents créent un compte ni signent la fiche.';
+    const OLD_P2 = 'Si vous avez plusieurs enfants, utilisez une adresse e-mail différente pour chaque compte (une adresse e-mail ne peut servir qu\'à un seul compte).';
+    const NEW_P1 = 'Un seul compte suffit pour toute la famille : ne créez pas un compte par enfant. Pour chaque enfant, cliquez sur le bouton « + Ajouter un enfant » (en haut de votre espace ; « Ajouter mon premier enfant » la première fois) : sa fiche sanitaire est créée dans votre compte, et vous retrouvez toutes vos fiches dans « Mes enfants ».';
+    const NEW_P2 = 'Chaque enfant a sa propre fiche sanitaire, et la signature d\'un seul responsable légal suffit pour la valider : il n\'est donc pas nécessaire que les deux parents créent un compte ni signent la fiche.';
+    if (!c.body.includes(OLD_P1)) {
+      console.log("[accueil] Le message d'accueil enregistré parle encore d'un compte par enfant mais il a été modifié : corrigez-le dans Messagerie > Message d'accueil (bouton « Rétablir le texte par défaut »).");
+      return;
+    }
+    let body = c.body.replace(OLD_P1, NEW_P1 + '\n\n' + NEW_P2);
+    body = body.replace(OLD_P2 + '\n\n', '').replace('\n\n' + OLD_P2, '').replace(OLD_P2, '');
+    await writeKv(WELCOME_KEY, { ...c, body, updatedAt: new Date().toISOString(), updatedBy: 'maj-texte-accueil' });
+    console.log("[accueil] Texte du message d'accueil mis à jour : un seul compte par famille, bouton « Ajouter un enfant ».");
+  } catch (e) {
+    console.error("[accueil] Mise à jour du texte d'accueil impossible :", e.message);
+  }
 }
 
 function commRenderWelcome(text, user) {
@@ -1843,7 +1867,10 @@ app.use((req, res) => {
 
 ensureTable()
   .then(() => {
-    app.listen(PORT, '0.0.0.0', () => console.log(`Serveur fiche sanitaire voyages sur le port ${PORT}`));
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Serveur fiche sanitaire voyages sur le port ${PORT}`);
+      welcomeTextMigration();
+    });
   })
   .catch((e) => {
     console.error("Impossible d'initialiser la base :", e);
