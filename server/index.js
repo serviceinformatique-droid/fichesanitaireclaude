@@ -19,6 +19,15 @@ const pool = new Pool({
 
 app.use(express.json({ limit: '15mb' }));
 
+// --- Authentification (build auth-20261006) : voir server/auth.js ---
+// Toutes les routes /api sont contrôlées avant les gestionnaires ci-dessous (connexion par jeton, droits par rôle).
+const fsAuth = require('./auth').install(app, {
+  readKv: (k) => readKv(k),
+  writeKv: (k, v) => writeKv(k, v),
+  lockUserWrites: () => lockUserWrites(),
+  commSendWelcome: (u) => commSendWelcome(u),
+});
+
 // --- Limite de taille des NOUVELLES pièces jointes (build attachments-limit-20261004) ---
 // Une pièce jointe de plus de ~2,2 Mo (3 000 000 caractères en base64) est refusée si elle est
 // nouvelle ou modifiée. Les pièces jointes déjà enregistrées restent modifiables : l'enregistrement
@@ -1027,10 +1036,15 @@ async function writeKv(key, value) {
 async function getOrCreateMagicLinkToken(studentId) {
   const links = (await readKv(MAGIC_LINKS_KEY)) || {};
   const existingEntry = Object.entries(links).find(([, v]) => v.studentId === studentId);
-  if (existingEntry) return existingEntry[0];
+  if (existingEntry && !(existingEntry[1].expiresAt && Date.parse(existingEntry[1].expiresAt) < Date.now())) return existingEntry[0];
+  if (existingEntry) delete links[existingEntry[0]]; // lien expiré : remplacé par un nouveau (build auth-20261006)
 
   const token = crypto.randomBytes(24).toString('hex');
-  links[token] = { studentId, createdAt: new Date().toISOString() };
+  links[token] = {
+    studentId,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + Number(process.env.MAGIC_LINK_DAYS || 30) * 86400000).toISOString(),
+  };
   await writeKv(MAGIC_LINKS_KEY, links);
   return token;
 }
@@ -1854,6 +1868,7 @@ app.get('/api/backups', (req, res) => {
 
 app.get('/api/backups/:name', (req, res) => {
   const safeName = path.basename(req.params.name);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.json$/.test(safeName)) return res.status(404).json({ error: 'Sauvegarde introuvable' });
   const filePath = path.join(BACKUP_DIR, safeName);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Sauvegarde introuvable' });
   res.download(filePath);
@@ -1868,7 +1883,7 @@ app.use((req, res) => {
 ensureTable()
   .then(() => {
     app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Serveur fiche sanitaire voyages sur le port ${PORT}`);
+      (console.log(`Serveur fiche sanitaire voyages sur le port ${PORT}`), fsAuth.migrate());
       welcomeTextMigration();
     });
   })

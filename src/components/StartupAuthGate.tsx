@@ -1,6 +1,21 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { User, Trip, Student, SECRET_QUESTIONS } from '../types';
 import { CerfaOfficialView } from './CerfaOfficialView';
+import {
+  authLogin,
+  authRegister,
+  authResetPassword,
+  authSecretQuestion,
+  authChaperone,
+  authLogout,
+  authFailureMessage,
+  getChaperoneSession,
+  takeGateMode,
+  takeExpiredFlag,
+} from '../utils/auth';
+
+// État de l'écran à l'ouverture de la page (lu une seule fois) : accompagnateur déjà connecté, onglet demandé, session expirée
+const GATE_BOOT = { chaperoneTrip: getChaperoneSession(), mode: takeGateMode(), expired: takeExpiredFlag() };
 import {
   ShieldCheck,
   FileText,
@@ -54,12 +69,14 @@ export const StartupAuthGate: React.FC<StartupAuthGateProps> = ({
   establishmentName,
 }) => {
   // Main view modes: 'parent_login' | 'parent_register' | 'parent_forgot' | 'staff_login' | 'chaperone_access'
-  const [viewMode, setViewMode] = useState<'parent_login' | 'parent_register' | 'parent_forgot' | 'staff_login' | 'chaperone_access'>('parent_login');
+  const [viewMode, setViewMode] = useState<'parent_login' | 'parent_register' | 'parent_forgot' | 'staff_login' | 'chaperone_access'>(
+    (GATE_BOOT.chaperoneTrip ? 'chaperone_access' : (GATE_BOOT.mode as any)) || 'parent_login'
+  );
 
   // Accompanying teacher ("chaperone") access state
   const [chaperoneTripId, setChaperoneTripId] = useState<string>('');
   const [chaperonePasswordInput, setChaperonePasswordInput] = useState<string>('');
-  const [chaperoneAuthenticatedTripId, setChaperoneAuthenticatedTripId] = useState<string>('');
+  const [chaperoneAuthenticatedTripId, setChaperoneAuthenticatedTripId] = useState<string>(GATE_BOOT.chaperoneTrip);
   const [chaperoneClassFilter, setChaperoneClassFilter] = useState<string>('all');
   const [chaperoneViewingStudent, setChaperoneViewingStudent] = useState<Student | null>(null);
   const [chaperoneShowPassword, setChaperoneShowPassword] = useState<boolean>(false);
@@ -91,11 +108,16 @@ export const StartupAuthGate: React.FC<StartupAuthGateProps> = ({
   const [forgotNewPassword, setForgotNewPassword] = useState<string>('');
 
   // Messages
-  const [errorMsg, setErrorMsg] = useState<string>('');
+  const [errorMsg, setErrorMsg] = useState<string>(GATE_BOOT.expired ? 'Votre session a expiré. Veuillez vous reconnecter.' : '');
   const [successMsg, setSuccessMsg] = useState<string>('');
 
   // Clear errors when changing modes
   const switchMode = (mode: 'parent_login' | 'parent_register' | 'parent_forgot' | 'staff_login' | 'chaperone_access') => {
+    // un accompagnateur connecté qui change d'onglet ferme sa session (le jeton de voyage ne sert qu'à ce voyage)
+    if (GATE_BOOT.chaperoneTrip && chaperoneAuthenticatedTripId) {
+      authLogout(mode);
+      return;
+    }
     setViewMode(mode);
     setErrorMsg('');
     setSuccessMsg('');
@@ -109,24 +131,16 @@ export const StartupAuthGate: React.FC<StartupAuthGateProps> = ({
   };
 
   // Handle Chaperone (accompanying teacher) trip access
-  const handleChaperoneAccess = (e: React.FormEvent) => {
+  const handleChaperoneAccess = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
-    const trip = trips.find((t) => t.id === chaperoneTripId);
-    if (!trip) {
+    if (!chaperoneTripId) {
       setErrorMsg('Veuillez sélectionner un voyage.');
       return;
     }
-    if (!trip.chaperonePassword || !trip.chaperonePassword.trim()) {
-      setErrorMsg("Aucun mot de passe accompagnateur n'est configuré pour ce voyage. Contactez l'administration.");
-      return;
-    }
-    if (chaperonePasswordInput !== trip.chaperonePassword) {
-      setErrorMsg('Mot de passe incorrect pour ce voyage.');
-      return;
-    }
-    setChaperoneAuthenticatedTripId(trip.id);
-    setChaperoneClassFilter('all');
+    // le mot de passe du voyage est vérifié par le serveur ; la page se recharge ensuite avec les seuls élèves de ce voyage
+    const res = await authChaperone(chaperoneTripId, chaperonePasswordInput);
+    if (!res.ok) setErrorMsg(res.message);
   };
 
   const chaperoneTrip = trips.find((t) => t.id === chaperoneAuthenticatedTripId) || null;
@@ -148,7 +162,7 @@ export const StartupAuthGate: React.FC<StartupAuthGateProps> = ({
   }, [students, chaperoneAuthenticatedTripId]);
 
   // Handle Parent Login
-  const handleParentLogin = (e: React.FormEvent) => {
+  const handleParentLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -162,33 +176,17 @@ export const StartupAuthGate: React.FC<StartupAuthGateProps> = ({
       return;
     }
 
-    const targetParent = users.find(
-      (u) =>
-        u.role === 'parent' &&
-        (u.email.toLowerCase() === query ||
-          u.name.toLowerCase() === query ||
-          (u.firstName && u.lastName && `${u.firstName} ${u.lastName}`.toLowerCase() === query))
-    );
-
-    if (!targetParent) {
-      setErrorMsg('Identifiant ou mot de passe incorrect.');
-      return;
+    // Vérification par le serveur (build auth-20261006) : le mot de passe n'est plus comparé dans le navigateur
+    const res = await authLogin('parent', query, parentPasswordInput);
+    if (res.ok) {
+      setSuccessMsg(`Connexion réussie ! Bienvenue ${res.user.name}`);
+    } else {
+      setErrorMsg(authFailureMessage(res, 'Identifiant ou mot de passe incorrect.'));
     }
-
-    const expectedPassword = targetParent.password || '';
-    if (parentPasswordInput !== expectedPassword) {
-      setErrorMsg('Identifiant ou mot de passe incorrect.');
-      return;
-    }
-
-    setSuccessMsg(`Connexion réussie ! Bienvenue ${targetParent.name}`);
-    setTimeout(() => {
-      onLoginSuccess(targetParent);
-    }, 300);
   };
 
   // Handle Parent Registration
-  const handleParentRegister = (e: React.FormEvent) => {
+  const handleParentRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -202,19 +200,13 @@ export const StartupAuthGate: React.FC<StartupAuthGateProps> = ({
       return;
     }
 
-    if (regPassword.length < 4) {
-      setErrorMsg('Le mot de passe doit comporter au moins 4 caractères.');
+    if (regPassword.length < 6) {
+      setErrorMsg('Le mot de passe doit comporter au moins 6 caractères.');
       return;
     }
 
-    // Check if email already exists
-    const existing = users.find((u) => u.email.toLowerCase() === regEmail.trim().toLowerCase());
-    if (existing) {
-      setErrorMsg('Un compte existe déjà avec cette adresse email. Veuillez vous connecter ou réinitialiser votre mot de passe.');
-      return;
-    }
-
-    const newCreatedUser = onRegisterParent({
+    // Création du compte par le serveur (adresse unique, mot de passe haché, message d'accueil, connexion immédiate)
+    const result = await authRegister({
       firstName: regFirstName.trim(),
       lastName: regLastName.trim(),
       email: regEmail.trim().toLowerCase(),
@@ -223,56 +215,31 @@ export const StartupAuthGate: React.FC<StartupAuthGateProps> = ({
       secretQuestion: regQuestion,
       secretAnswer: regAnswer.trim(),
     });
-
-    setSuccessMsg(`Compte parent créé avec succès pour ${newCreatedUser.name} ! Connexion en cours...`);
-    setTimeout(() => {
-      onLoginSuccess(newCreatedUser);
-    }, 400);
+    if (!result.ok) {
+      setErrorMsg(result.message);
+      return;
+    }
+    setSuccessMsg(`Compte parent créé avec succès pour ${result.user.name} ! Connexion en cours...`);
   };
 
   // Handle Staff (Organizer / Admin) Login
-  const handleStaffLogin = (e: React.FormEvent) => {
+  const handleStaffLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
-    let targetStaff: User | undefined;
-
-    if (staffRole === 'admin') {
-      targetStaff = users.find((u) => u.role === 'admin');
-
-      if (!targetStaff || !targetStaff.password || staffPasswordInput !== targetStaff.password) {
-        setErrorMsg('Mot de passe administrateur incorrect.');
-        return;
-      }
+    const res =
+      staffRole === 'admin'
+        ? await authLogin('admin', '', staffPasswordInput)
+        : await authLogin('organizer', staffEmailInput.trim(), staffPasswordInput);
+    if (res.ok) {
+      setSuccessMsg(`Accès autorisé : ${res.user.name}`);
     } else {
-      // Organizer
-      const organizers = users.filter((u) => u.role === 'organizer');
-      const query = staffEmailInput.trim().toLowerCase();
-
-      if (query) {
-        targetStaff = organizers.find(
-          (u) =>
-            u.email.toLowerCase() === query ||
-            u.name.toLowerCase() === query
-        );
-      } else if (organizers.length === 1) {
-        targetStaff = organizers[0];
-      }
-
-      if (!targetStaff || staffPasswordInput !== (targetStaff.password || '')) {
-        setErrorMsg('Identifiant ou mot de passe incorrect.');
-        return;
-      }
+      setErrorMsg(authFailureMessage(res, staffRole === 'admin' ? 'Mot de passe administrateur incorrect.' : 'Identifiant ou mot de passe incorrect.'));
     }
-
-    setSuccessMsg(`Accès autorisé : ${targetStaff.name}`);
-    setTimeout(() => {
-      onLoginSuccess(targetStaff!);
-    }, 300);
   };
 
   // Handle Forgot Password
-  const handleForgotPassword = (e: React.FormEvent) => {
+  const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -281,28 +248,27 @@ export const StartupAuthGate: React.FC<StartupAuthGateProps> = ({
       return;
     }
 
-    const res = onResetPasswordWithSecret(forgotEmail.trim().toLowerCase(), forgotAnswer.trim(), forgotNewPassword);
-    if (!res.success) {
+    const res = await authResetPassword(forgotEmail.trim().toLowerCase(), forgotAnswer.trim(), forgotNewPassword);
+    if (!res.ok) {
       setErrorMsg(res.message);
       return;
     }
-
-    setSuccessMsg(res.message);
-    if (res.user) {
-      setTimeout(() => {
-        onLoginSuccess(res.user!);
-      }, 500);
-    } else {
-      setTimeout(() => {
-        switchMode('parent_login');
-      }, 1000);
-    }
+    setSuccessMsg('Mot de passe mis à jour avec succès !');
   };
 
-  // Determine secret question for forgot email if user exists
-  const matchingForgotUser = users.find(
-    (u) => u.role === 'parent' && u.email.toLowerCase() === forgotEmail.trim().toLowerCase()
-  );
+  // Question secrète du compte saisi (demandée au serveur : la liste des comptes n'est plus dans le navigateur)
+  const [forgotQuestion, setForgotQuestion] = useState<string | null>(null);
+  useEffect(() => {
+    const email = forgotEmail.trim().toLowerCase();
+    if (!email.includes('@')) {
+      setForgotQuestion(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      authSecretQuestion(email).then(setForgotQuestion);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [forgotEmail]);
 
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col justify-between selection:bg-blue-500 selection:text-white">
@@ -662,11 +628,11 @@ export const StartupAuthGate: React.FC<StartupAuthGateProps> = ({
                     />
                   </div>
 
-                  {matchingForgotUser && matchingForgotUser.secretQuestion && (
+                  {forgotQuestion && (
                     <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900">
                       <strong className="block font-bold">Votre question secrète enregistrée :</strong>
                       <span className="italic mt-0.5 block font-medium">
-                        « {matchingForgotUser.secretQuestion} »
+                        « {forgotQuestion} »
                       </span>
                     </div>
                   )}
@@ -953,6 +919,7 @@ export const StartupAuthGate: React.FC<StartupAuthGateProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    authLogout('chaperone_access'); // ferme la session de ce voyage (le jeton ne sert qu'à lui)
                     setChaperoneAuthenticatedTripId('');
                     setChaperonePasswordInput('');
                   }}

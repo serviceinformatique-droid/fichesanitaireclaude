@@ -36,6 +36,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [pendingTargetUser, setPendingTargetUser] = useState<User | null>(null);
   const [pendingTargetTabName, setPendingTargetTabName] = useState<string>('');
+  const [pendingTargetRole, setPendingTargetRole] = useState<'parent' | 'organizer' | 'admin' | undefined>(undefined);
 
   // Filter notifications relevant to current user/role
   const userNotifs = notifications.filter(
@@ -62,6 +63,7 @@ export const Header: React.FC<HeaderProps> = ({
       } else {
         const parentUser = users.find((u) => u.role === 'parent') || users[0];
         setPendingTargetUser(parentUser);
+        setPendingTargetRole('parent');
         setPendingTargetTabName('Espace Parents');
         setShowLoginModal(true);
       }
@@ -71,12 +73,14 @@ export const Header: React.FC<HeaderProps> = ({
       } else {
         const orgUser = users.find((u) => u.role === 'organizer') || users[1];
         setPendingTargetUser(orgUser);
+        setPendingTargetRole('organizer');
         setPendingTargetTabName('Espace Organisateurs');
         setShowLoginModal(true);
       }
     } else if (tab === 'admin') {
       const adminUser = users.find((u) => u.role === 'admin') || users[2];
       setPendingTargetUser(adminUser);
+      setPendingTargetRole('admin');
       setPendingTargetTabName('Espace Administrateur');
       setShowLoginModal(true);
     }
@@ -91,6 +95,7 @@ export const Header: React.FC<HeaderProps> = ({
       onSwitchUser(target);
     } else {
       setPendingTargetUser(target);
+      setPendingTargetRole(undefined);
       setPendingTargetTabName(`Compte de ${target.name}`);
       setShowLoginModal(true);
     }
@@ -376,6 +381,7 @@ export const Header: React.FC<HeaderProps> = ({
           currentUser={currentUser}
           targetUser={pendingTargetUser}
           targetTabName={pendingTargetTabName}
+          targetRole={pendingTargetRole}
           onSuccessLogin={(authenticatedUser) => {
             onSwitchUser(authenticatedUser);
             // If user wanted to go to a specific tab, switch to it

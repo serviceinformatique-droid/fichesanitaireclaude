@@ -26,11 +26,11 @@ set -e
 
 APP_DIR="${APP_DIR:-/opt/fichesanitaire-voyages}"
 TOOLS_DIR="${TOOLS_DIR:-/root}"
-BUNDLE_VERSION="2026-10-05-ad79f9dd"
-PAYLOAD_SHA256="a8e6ece30e7e90c35b0fd0ae29a596f337cfab5af02926a065d98ae9346947b5"
+BUNDLE_VERSION="2026-10-05-9a1ec193"
+PAYLOAD_SHA256="b7eb56fb34913557bf0dfdc7711ebf81789d28c6a83c7049d5f78bf782cfb11e"
 SELF="$0"
 
-PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression patch-messagerie-lecture patch-pdf-organisateurs patch-fin-annee patch-rgpd patch-fleches patch-corrections patch-mot-de-passe-parent patch-fiche-une-page patch-message-accueil"
+PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression patch-messagerie-lecture patch-pdf-organisateurs patch-fin-annee patch-rgpd patch-fleches patch-corrections patch-mot-de-passe-parent patch-fiche-une-page patch-message-accueil patch-authentification"
 TOOLS="rattacher-fiche restaurer-sauvegarde"
 
 WORK=""
@@ -66,6 +66,7 @@ describe() {
     patch-mot-de-passe-parent) echo "bouton bleu Changer mon mot de passe dans l Espace Famille";;
     patch-fiche-une-page) echo "fiche sanitaire PDF sur une seule page (reduction automatique)";;
     patch-message-accueil) echo "message d accueil : un seul compte par famille, bouton Ajouter un enfant";;
+    patch-authentification) echo "authentification serveur : mots de passe hachés, sessions, données filtrées par rôle";;
   esac
 }
 
@@ -97,6 +98,7 @@ is_installed() {
     patch-mot-de-passe-parent) [ -f "$APP_DIR/src/components/ParentPasswordModal.tsx" ];;
     patch-fiche-une-page) grep -q "onepage-20261006" "$APP_DIR/src/utils/pdfGenerator.ts" 2>/dev/null;;
     patch-message-accueil) grep -q "welcomeTextMigration" "$APP_DIR/server/index.js" 2>/dev/null;;
+    patch-authentification) [ -f "$APP_DIR/server/auth.js" ];;
     *) return 1;;
   esac
 }

@@ -51,6 +51,7 @@ import { CerfaEditor } from './components/CerfaEditor';
 import { CerfaOfficialView } from './components/CerfaOfficialView';
 import { StartupAuthGate } from './components/StartupAuthGate';
 import { MagicLinkAccess } from './components/MagicLinkAccess';
+import { authLogout, authImpersonate, authReturnToAdmin, getOriginAdminUser } from './utils/auth';
 import { CheckCircle2, AlertTriangle, Info } from 'lucide-react';
 import { sendCompletedFichePdfByEmail } from './utils/pdfGenerator';
 
@@ -249,6 +250,7 @@ export default function App() {
 
   // Logout / Return to startup gate
   const handleLogout = () => {
+    authLogout(); // ferme la session sur le serveur, efface les données du navigateur et recharge la page (build auth-20261006)
     setIsAuthenticated(false);
     setCurrentUser(null);
     setSelectedStudent(null);
@@ -259,6 +261,17 @@ export default function App() {
 
   // Switch role / user
   const handleSwitchUser = (newUser: User) => {
+    // Consultation d'un autre compte : le serveur délivre un jeton dédié ; l'administrateur garde le sien pour revenir (build auth-20261006)
+    if (newUser.role === 'admin' && originAdminId) {
+      authReturnToAdmin();
+      return;
+    }
+    if (currentUser && currentUser.role === 'admin' && newUser.id !== currentUser.id) {
+      authImpersonate(newUser.id, currentUser).then((ok) => {
+        if (!ok) showToast("Impossible d'ouvrir ce compte pour le moment.", 'warning');
+      });
+      return;
+    }
     // Un administrateur qui consulte un autre compte garde la possibilité d'y revenir
     if (currentUser && currentUser.role === 'admin' && newUser.role !== 'admin') updateOriginAdmin(currentUser.id);
     else if (newUser.role === 'admin') updateOriginAdmin(null);
@@ -838,7 +851,7 @@ export default function App() {
         establishmentName={establishmentName}
         logoUrl={logoUrl}
         onSwitchUser={handleSwitchUser}
-        originAdmin={originAdminId ? users.find((u) => u.id === originAdminId && u.role === 'admin') || null : null}
+        originAdmin={originAdminId ? users.find((u) => u.id === originAdminId && u.role === 'admin') || getOriginAdminUser() : null}
         notifications={notifications}
         onMarkNotificationRead={(id) => {
           const updated = notifications.map((n) => (n.id === id ? { ...n, read: true } : n));

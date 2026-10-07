@@ -279,6 +279,18 @@ export function getStoredCurrentUserId(): string | null {
   return kvStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
 }
 
+// Efface les données mises en cache dans le navigateur (déconnexion, changement de compte) : build auth-20261006
+export function clearAllCachedData(): void {
+  memStore.clear();
+  Object.values(STORAGE_KEYS).forEach((k) => {
+    try {
+      localStorage.removeItem(k);
+    } catch {
+      /* stockage indisponible */
+    }
+  });
+}
+
 export function clearStoredCurrentUserId(): void {
   kvStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID);
 }

@@ -53,12 +53,16 @@ const auto = args.includes('--auto');
 const doublons = args.includes('--doublons');
 const forceAttach = args.includes('--force');
 const [ficheArg, emailArg] = args.filter((a) => !a.startsWith('--'));
-const H = { 'Content-Type': 'application/json' };
+// Serveur authentifié (build auth-20261006) : l'outil s'identifie avec le secret local du conteneur (jamais exposé au réseau)
+let SECRET = process.env.LOCAL_TOOL_SECRET || '';
+try { if (!SECRET) SECRET = require('fs').readFileSync('/app/.local-tool-secret', 'utf8').trim(); } catch (e) { /* ancien serveur sans authentification : pas de secret */ }
+const H = { 'Content-Type': 'application/json', ...(SECRET ? { 'X-Local-Tool': SECRET } : {}) };
 const norm = (v) => String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
 const die = (m) => { console.error('\n!!! ' + m + '\n'); process.exit(1); };
 
 async function getKv(key) {
-  const r = await fetch(`${BASE}/api/data/${key}`);
+  const r = await fetch(`${BASE}/api/data/${key}`, { headers: H });
+  if (r.status === 401 || r.status === 403) die(`Accès refusé par le serveur (HTTP ${r.status}) : le secret local /app/.local-tool-secret est illisible ou absent. Redémarrez le conteneur : docker compose restart app`);
   if (!r.ok) die(`Lecture impossible de ${key} (HTTP ${r.status}).`);
   const j = await r.json();
   return Array.isArray(j) ? j : (j && Array.isArray(j.value) ? j.value : []);

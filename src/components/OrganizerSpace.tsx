@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { Student, Trip, User, DietCategory } from '../types';
 import { exportTripCsv } from '../utils/storage';
 import { exportToPdf } from '../utils/pdfGenerator';
+import { authChangePassword } from '../utils/auth';
 import { generateOrganizerReportPdf } from '../utils/organizerPdf';
 import { formatDateFr } from '../utils/cerfaValidation';
 import { openOrDownloadDocument } from '../utils/documentViewer';
@@ -108,9 +109,8 @@ export const OrganizerSpace: React.FC<OrganizerSpaceProps> = ({
     setPwdError('');
     setPwdSuccess('');
 
-    const actualPassword = currentUser.password;
-    if (actualPassword && currentPasswordInput && currentPasswordInput !== actualPassword) {
-      setPwdError('Le mot de passe actuel saisi est incorrect.');
+    if (!currentPasswordInput) {
+      setPwdError('Veuillez saisir votre mot de passe actuel.');
       return;
     }
 
@@ -119,8 +119,8 @@ export const OrganizerSpace: React.FC<OrganizerSpaceProps> = ({
       return;
     }
 
-    if (newPasswordInput.length < 4) {
-      setPwdError('Le nouveau mot de passe doit comporter au moins 4 caractères.');
+    if (newPasswordInput.length < 6) {
+      setPwdError('Le nouveau mot de passe doit comporter au moins 6 caractères.');
       return;
     }
 
@@ -129,13 +129,11 @@ export const OrganizerSpace: React.FC<OrganizerSpaceProps> = ({
       return;
     }
 
-    if (onUpdateUserPassword) {
-      try {
-        await onUpdateUserPassword(currentUser.id, newPasswordInput.trim());
-      } catch (err) {
-        setPwdError("Échec de l'enregistrement côté serveur. Réessayez ou vérifiez votre connexion avant de vous déconnecter.");
-        return;
-      }
+    // vérification de l'ancien mot de passe et enregistrement par le serveur (build auth-20261006)
+    const chg = await authChangePassword(currentPasswordInput, newPasswordInput.trim());
+    if (!chg.ok) {
+      setPwdError(chg.message);
+      return;
     }
 
     setPwdSuccess('Votre mot de passe a été mis à jour avec succès !');

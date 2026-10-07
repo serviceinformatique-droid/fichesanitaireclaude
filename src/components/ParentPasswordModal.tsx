@@ -2,8 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertCircle, CheckCircle2, Eye, EyeOff, KeyRound, X } from 'lucide-react';
 import { User } from '../types';
+import { authChangePassword } from '../utils/auth';
 
-console.log('[fichesanitaire] build parent-password-20261006');
+console.log('[fichesanitaire] build parent-password-20261006 (serveur : auth-20261006)');
 
 interface ParentPasswordModalProps {
   currentUser: User;
@@ -37,9 +38,8 @@ export const ParentPasswordModal: React.FC<ParentPasswordModalProps> = ({ curren
     e.preventDefault();
     if (busy || success) return;
     setError('');
-    const actual = currentUser.password || '';
-    if (actual && current !== actual) {
-      setError('Le mot de passe actuel saisi est incorrect.');
+    if (!current) {
+      setError('Veuillez saisir votre mot de passe actuel.');
       return;
     }
     if (next.trim().length < MIN_LENGTH) {
@@ -50,23 +50,18 @@ export const ParentPasswordModal: React.FC<ParentPasswordModalProps> = ({ curren
       setError('Les deux nouveaux mots de passe ne correspondent pas.');
       return;
     }
-    if (actual && next.trim() === actual) {
+    if (next.trim() === current) {
       setError("Le nouveau mot de passe doit être différent de l'ancien.");
       return;
     }
-    if (!onUpdateUserPassword) {
-      setError("Le changement de mot de passe n'est pas disponible pour le moment.");
-      return;
-    }
     setBusy(true);
-    try {
-      await onUpdateUserPassword(currentUser.id, next.trim());
-    } catch {
-      setBusy(false);
-      setError("Échec de l'enregistrement. Vérifiez votre connexion et réessayez : votre ancien mot de passe reste valable.");
+    // vérification et enregistrement par le serveur (l'ancien mot de passe n'est plus comparé dans le navigateur)
+    const res = await authChangePassword(current, next.trim());
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.message);
       return;
     }
-    setBusy(false);
     setSuccess('Votre mot de passe a été modifié. Utilisez-le à votre prochaine connexion.');
     setTimeout(onClose, 1800);
   };

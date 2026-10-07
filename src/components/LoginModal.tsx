@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { User } from '../types';
+import { User, UserRole } from '../types';
+import { authLogin, authFailureMessage } from '../utils/auth';
 import { sortUsersByName } from '../utils/sortUsers';
 import { Lock, ShieldCheck, KeyRound, AlertCircle, CheckCircle, ArrowRight, Eye, EyeOff, X } from 'lucide-react';
 
@@ -11,6 +12,7 @@ interface LoginModalProps {
   targetUser?: User | null;
   onSuccessLogin: (user: User) => void;
   targetTabName?: string;
+  targetRole?: UserRole;
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({
@@ -21,8 +23,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   targetUser: initialTargetUser,
   onSuccessLogin,
   targetTabName,
+  targetRole,
 }) => {
   const isAdmin = currentUser.role === 'admin';
+  // Accès à l'espace d'un AUTRE rôle : le serveur vérifie le mot de passe (la liste des comptes de ce rôle n'est plus fournie)
+  const crossRole = !isAdmin && !!targetRole && targetRole !== currentUser.role;
+  const [identifierInput, setIdentifierInput] = useState<string>('');
 
   // Un parent ou un organisateur ne doit voir/pouvoir sélectionner que des comptes
   // de son propre rôle : les comptes Direction/Administration et Organisateurs
@@ -51,7 +57,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const handleAuthenticate = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
-    if (!targetUser) return;
+    if (!targetUser && !crossRole) return;
 
     // Admin has access to all profiles without password check!
     if (isAdmin) {
@@ -63,18 +69,17 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       return;
     }
 
-    // Standard password check
-    const expectedPassword = targetUser.password;
-
-    if (expectedPassword && passwordInput.trim() === expectedPassword) {
-      setSuccessMsg(`Authentification réussie ! Bienvenue ${targetUser.name}`);
-      setTimeout(() => {
-        onSuccessLogin(targetUser);
-        onClose();
-      }, 400);
-    } else {
-      setErrorMsg('Mot de passe incorrect pour ce compte. Veuillez réessayer.');
-    }
+    // Vérification par le serveur (build auth-20261006) : le mot de passe n'est plus comparé dans le navigateur
+    const role = ((crossRole ? targetRole : targetUser && targetUser.role) || currentUser.role) as UserRole;
+    const identifier = crossRole ? identifierInput.trim() : (targetUser && targetUser.email) || '';
+    setErrorMsg('');
+    authLogin(role, identifier, passwordInput).then((res) => {
+      if (res.ok) {
+        setSuccessMsg(`Authentification réussie ! Bienvenue ${res.user.name}`);
+      } else {
+        setErrorMsg(authFailureMessage(res, 'Mot de passe incorrect pour ce compte. Veuillez réessayer.'));
+      }
+    });
   };
 
   return (
@@ -117,6 +122,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         )}
 
         {/* User profile selection */}
+        {!crossRole && (
         <div className="my-4 space-y-3">
           <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
             Sélectionnez le profil à utiliser :
@@ -171,6 +177,25 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             })}
           </div>
         </div>
+        )}
+
+        {crossRole && targetRole !== 'admin' && (
+          <div className="my-4">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
+              {targetRole === 'organizer' ? 'Identifiant (e-mail) — facultatif' : 'Adresse e-mail'}
+            </label>
+            <input
+              type="text"
+              value={identifierInput}
+              onChange={(e) => {
+                setIdentifierInput(e.target.value);
+                setErrorMsg('');
+              }}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:ring-2 focus:ring-blue-900 focus:outline-none"
+              data-testid="login-modal-identifier"
+            />
+          </div>
+        )}
 
         {/* Password field (if not bypassed by admin) */}
         {!isAdmin ? (

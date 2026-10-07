@@ -4,7 +4,7 @@
 
 Ce document est **généré automatiquement** par `maj-portail.sh` (dans `/opt/readme/README.md`) à chaque mise à jour. Il est **auto-suffisant** : état réel de l'installation, documentation, toutes les commandes d'exploitation et **tous les scripts** (code source complet du projet tel qu'il est installé sur le serveur, correctifs, outils, script de mise à jour). Il est destiné à être **réinjecté tel quel dans une nouvelle conversation Claude** pour reprendre le projet sans aucun historique, ou à réinstaller l'application sur un LXC neuf.
 
-> Document généré automatiquement par `maj-portail.sh` le 06/10/2026 (lot `2026-10-05-ad79f9dd`). Ce dépôt est un **miroir** de l'installation du serveur : ne pas y modifier de fichiers à la main (ils seraient écrasés à la prochaine mise à jour). Le README complet (état du serveur + tous les scripts) est généré sur le serveur dans `/opt/readme/README.md` et n'est pas publié.
+> Document généré automatiquement par `maj-portail.sh` le 07/10/2026 (lot `2026-10-05-9a1ec193`). Ce dépôt est un **miroir** de l'installation du serveur : ne pas y modifier de fichiers à la main (ils seraient écrasés à la prochaine mise à jour). Le README complet (état du serveur + tous les scripts) est généré sur le serveur dans `/opt/readme/README.md` et n'est pas publié.
 
 **Contenu du dépôt :** la racine contient le code de l'application (`server/`, `src/`, `Dockerfile`, `docker-compose.yml`…) ; `scripts/` contient les correctifs `patch-*.sh`, les outils (`rattacher-fiche.sh`, `restaurer-sauvegarde.sh`) et la logique de mise à jour (`maj-portail.head.sh`).
 
@@ -28,7 +28,7 @@ Ce document est **généré automatiquement** par `maj-portail.sh` (dans `/opt/r
 - **Messagerie interne et popups** : bouton « Messagerie » en bas à gauche pour tous les comptes connectés ; l'administration écrit à un ou plusieurs parents et publie des popups visibles tout de suite (section 7bis).
 - **Relances** : `node-cron`, relances hebdomadaires automatiques + relances manuelles individuelles ou en masse (seule fonctionnalité qui utilise encore le SMTP).
 - **Sauvegarde** : extraction horaire automatique de toute la base vers un volume Docker dédié, en plus des sauvegardes Proxmox quotidiennes.
-- **Chargement des données** : à l'ouverture, chaque navigateur télécharge TOUTE la base (`GET /api/data`) et la copie dans son stockage local, avec repli en mémoire si le quota (~5 Mo) est dépassé (voir 8quater).
+- **Chargement des données** : après connexion, le navigateur télécharge SEULEMENT les données de son compte (`GET /api/data` filtré par le serveur : famille = ses enfants, professeur = les élèves de son voyage, accompagnateur = les élèves de son voyage, administration = tout) et les copie dans son stockage local (effacé à la déconnexion), avec repli en mémoire si le quota (~5 Mo) est dépassé (voir 8quater).
 - **Déploiement** : LXC Debian 12, répertoire `/opt/fichesanitaire-voyages/`, exposé en interne sur le port défini par `APP_PORT` (`8099` par défaut), reverse-proxy via Nginx Proxy Manager.
 
 ## 2. Architecture des fichiers
@@ -121,8 +121,8 @@ Variable fixée dans `docker-compose.yml` (pas dans `.env`) : `PDF_ARCHIVE_DIR=/
 
 Les middlewares de protection sont déclarés juste après `express.json` (ordre : peu importe, chaque garde est indépendante).
 
-- `GET /api/data` — bootstrap initial (toutes les clés kv_store **sauf** `cerfa_messages*` et `cerfa_popups*`, jamais renvoyées). `GET/PUT /api/data/:key` répondent **403** pour ces clés privées.
-- `PUT /api/data/:key` — écriture brute d'une clé entière (réservé aux ressources **bulk** rares : voyages, classes, établissement — jamais pour les élèves/comptes individuels)
+- `GET /api/data` — bootstrap **filtré par rôle** (voir « Authentification » ci-dessous) : un visiteur sans compte ne reçoit que le nom de l'établissement, le logo et les voyages SANS leur mot de passe accompagnateur. Les clés `cerfa_messages*`, `cerfa_popups*`, `cerfa_auth_sessions_v1` et `cerfa_magic_links_v1` ne sont jamais renvoyées (`GET /api/data/:key` répond 404).
+- `PUT /api/data/:key` — écriture brute d'une clé entière, **réservée aux administrateurs** (voyages, classes, établissement, comptes) ; les autres rôles ne peuvent modifier que l'état « lu » de leurs notifications. La liste des comptes écrite par l'administration conserve les empreintes de mots de passe.
 - `POST /api/students/upsert` — **fusion serveur** d'UN SEUL élève. Corps : `{ student, checkDuplicate?, baseUpdatedAt? }`. Gardes successives :
   - **parent-guard** : une NOUVELLE fiche sans `parentId` est refusée (**400 `parent-required`**) ; un enregistrement dont le `parentId` est absent ou vide **conserve** le parent déjà enregistré (journal : `[parent-guard]`).
   - **studentVersionGuard** : verrou global d'écriture de fiches + `baseUpdatedAt` différent de la version stockée → **409 `conflict`** (voir 8bis) ; conserve `pdfSentAt`.
@@ -142,6 +142,19 @@ Les middlewares de protection sont déclarés juste après `express.json` (ordre
   - `POST /api/messages/welcome/get|save|send-existing` (administrateur seulement) — message d'accueil par défaut
 - **Popups** : `POST /api/popups/send|list|deactivate|delete` (administrateur), `POST /api/popups/ack` (tout compte), `GET /api/popups/public` (popups « tous les parents », sans compte)
 - `GET /health` — vérification de disponibilité
+
+### 6bis. Authentification (build `auth-20261006`, `server/auth.js` + `src/utils/auth.ts`)
+- **Principe** : toutes les routes `/api/*` passent par un contrôle installé juste après `express.json` ; **refus par défaut aux non-administrateurs**, sauf une liste d'exceptions (connexion, inscription, mot de passe oublié, accès accompagnateur, liens directs, popups publics, `/api/year-end/public`, `/health`).
+- **Mots de passe** : empreintes `scrypt` (`passwordHash`), réponses secrètes hachées (`secretAnswerHash`, comparaison sans casse ni espaces) ; jamais renvoyés au navigateur (`sanitizeUser`). Au démarrage, `migrate()` convertit les anciens mots de passe/réponses en clair (journal `[auth] n mot(s) de passe … converti(s)`) : personne ne change rien. Minimum **6 caractères**.
+- **Sessions** : jeton aléatoire (seule son empreinte SHA-256 est stockée, clé `cerfa_auth_sessions_v1`, conservée après redémarrage). Parents 30 j, professeurs/administration 7 j, accompagnateurs 12 h, consultation d'un compte 4 h. Un changement ou une réinitialisation de mot de passe ferme les autres sessions du compte.
+- **Rôles** : `parent` (ses enfants : `parentId`), `organizer` (élèves dont `registeredTripIds` croise ses `assignedTripIds`), `chaperone` (jeton de voyage : élèves de ce voyage), `admin`. Les écritures d'élèves d'un parent sont limitées à ses fiches (`parentId` imposé) ; l'identifiant `userId` des routes messagerie/popups/fin d'année est **imposé par le serveur** (impossible de se faire passer pour un autre).
+- **Routes** : `POST /api/auth/login {role, identifier, password}` (admin : mot de passe seul ; professeur : identifiant facultatif s'il n'y en a qu'un), `register`, `secret-question`, `reset-password`, `chaperone {tripId, password}`, `logout`, `GET /api/auth/me`, `change-password {currentPassword, newPassword}`, `impersonate {userId}` (administrateur ; jeton dédié, pas de rebond). `test-token` n'existe que si `AUTH_TEST_HOOK=1`.
+- **Blocage** : `AUTH_MAX_FAILS` essais ratés par adresse et par identifiant (réponse 429 `locked`, `retryAfterSeconds`), seuil global plus haut par compte ; mêmes règles pour le mot de passe de voyage, la question secrète et le changement de mot de passe. Inscriptions limitées par adresse IP.
+- **Liens directs** : échéance `MAGIC_LINK_DAYS=30` (410 ensuite ; « Copier le lien » en crée un nouveau) ; les liens existants reçoivent une échéance de 30 jours à la mise en service ; la fiche ne peut pas être rattachée à un autre parent par ce moyen ; l'archivage PDF par lien direct n'est accepté que pour l'élève du lien (en-tête `X-Magic-Token`).
+- **Outils locaux** : en-tête `X-Local-Tool` = contenu de `/app/.local-tool-secret` (créé au démarrage, mode 600) ; équivaut à l'administration (voir `commandes.md`).
+- **Navigateur** : `installAuthFetch()` joint le jeton à chaque requête `/api` ; une réponse 401 vide les données locales et ramène à la connexion avec « Votre session a expiré » ; connexion, changement de compte, consultation d'un compte (« Revenir à … ») et déconnexion rechargent la page. Les onglets d'espace et le sélecteur de compte restent réservés à l'administration.
+- **Clés exposées par `GET /api/data`** : `cerfa_establishment_name_v1`, `cerfa_logo_v1`, `cerfa_trips_v2` (sans `chaperonePassword` sauf administration), `cerfa_users_v1`, `cerfa_students_v11`, `cerfa_classes_v1`, `cerfa_notifications_v1` (filtrées), et pour l'administration `cerfa_reminder_template_v1`, `cerfa_auto_reminder_enabled_v1`, `cerfa_last_auto_reminder_run_v1`.
+- **Limites connues** : pas d'authentification à deux facteurs ; le mot de passe de voyage est partagé (limité à 12 h, 5 essais) ; le mot de passe par défaut des comptes professeurs créés par l'administration (« Organisateur2027! ») doit être changé ; les anciennes sauvegardes horaires (14 jours) contiennent encore les mots de passe en clair d'avant la mise en service : à supprimer une fois la nouvelle version validée.
 
 ## 7. Fonctionnalités principales
 
@@ -304,6 +317,7 @@ Un administrateur dont la page est ouverte depuis longtemps verra un conflit s'i
 | 23 | `parent-password-20261006` | `patch-mot-de-passe-parent.sh` | Espace Famille : bouton bleu clair « Changer mon mot de passe » sous « + Ajouter un enfant » ; fenêtre `ParentPasswordModal` (mot de passe actuel exact, nouveau de 6 caractères au moins et différent, confirmation, afficher/masquer, Échap) ; enregistrement par `handleUpdateUserPassword` (comme l'espace organisateur) ; rendue dans `document.body` (portail React) |
 | 24 | `onepage-20261006` | `patch-fiche-une-page.sh` | Le PDF de la fiche sanitaire (téléchargement, copie archivée, envoi par e-mail) tient sur UNE page A4 : `generateCerfaPdf` mesure la hauteur nécessaire (passe `measure`), cherche par dichotomie la plus grande échelle (≥ 72 %) qui tient, puis dessine le tout sous une matrice de transformation (mise en page élargie de 1/échelle : les positions horizontales `margin + N` sont multipliées par `FX`) ; pied de page, filigrane et bandeau « non valable » restent à l'échelle réelle ; si la fiche est trop longue pour rester lisible, mise en page normale sur plusieurs pages (aucune information coupée) |
 | 25 | `welcome-text-20261006` | `patch-message-accueil.sh` | Message d'accueil : plus de « Merci de créer un compte par enfant » ni d'adresse e-mail différente par compte ; nouveau texte « Un seul compte suffit pour toute la famille … cliquez sur « + Ajouter un enfant » » (consignes sur la signature d'un seul responsable et sur la fiche déjà créée par l'autre responsable conservées) ; `welcomeTextMigration()` corrige au démarrage le texte ENREGISTRÉ par l'administration (clé `cerfa_messages_welcome_v1`) s'il contient encore les anciens paragraphes à l'identique, sans toucher aux autres modifications ; texte modifié à la main = avertissement dans le journal (`[accueil]`) ; les messages déjà envoyés ne sont pas modifiés |
+| 26 | `auth-20261006` | `patch-authentification.sh` | Authentification serveur : mots de passe hachés (scrypt, conversion automatique), sessions par jeton (familles 30 j, personnel 7 j, accompagnateurs 12 h), blocage après 5 essais, données filtrées par rôle, routes d'administration réservées, identité imposée par le serveur, liens directs 30 jours, secret des outils locaux (`/app/.local-tool-secret`) ; voir section 6bis |
 | outils | — | `rattacher-fiche.sh`, `restaurer-sauvegarde.sh` | Rattachement/doublons ; diagnostic et restauration de la base |
 | mise à jour | — | `maj-portail.sh` | État / outils / application des correctifs en attente / génération de ce README |
 
@@ -381,7 +395,7 @@ docker compose up -d
 
 Nom de l'établissement (une seule écriture, sans toucher aux fiches ; les fiches existantes gardent l'ancien nom) :
 ```bash
-docker exec fichesanitaire_app node -e "fetch('http://localhost:3000/api/data/cerfa_establishment_name_v1',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:'Ensemble Scolaire Notre Dame des Missions'})}).then(r=>console.log('HTTP',r.status))"
+docker exec fichesanitaire_app node -e "const s=(()=>{try{return require('fs').readFileSync('/app/.local-tool-secret','utf8').trim()}catch(e){return ''}})();fetch('http://localhost:3000/api/data/cerfa_establishment_name_v1',{method:'PUT',headers:{'Content-Type':'application/json','X-Local-Tool':s},body:JSON.stringify({value:'Ensemble Scolaire Notre Dame des Missions'})}).then(r=>console.log('HTTP',r.status))"
 ```
 
 Régénérer les PDF archivés (après un changement de nom d'établissement, ou pour créer les PDF manquants) : **Administration > « Établissement scolaire » > « PDF archivés sur le serveur » > « Régénérer les PDF de toutes les fiches complètes »** (barre de progression, bouton Arrêter, liste des échecs, relançable ; aucune fiche modifiée). Vérification d'un PDF : `grep -c "Notre Dame des Missions" /opt/fichesanitaire-voyages/fiches-pdf/<Classe>/<NOM_Prenom>.pdf`.
@@ -464,6 +478,20 @@ Le jeton doit être un jeton **fine-grained** limité à ce seul dépôt, permis
 - **Onglet RGPD des parents** : Espace Famille > « Mes données (RGPD) ». Journal des PDF supprimés avec leur fiche : `docker compose logs app | grep rgpd`.
 - **PDF orphelins** (fiches supprimées AVANT le correctif RGPD) — liste seule, rien n'est supprimé :
 ```bash
-docker exec fichesanitaire_app node -e "const fs=require('fs');const idx=JSON.parse(fs.readFileSync('/app/fiches-pdf/.index.json','utf8'));fetch('http://localhost:3000/api/data/cerfa_students_v11').then(r=>r.json()).then(j=>{const a=Array.isArray(j)?j:j.value;const ids=new Set(a.map(s=>s.id));const o=Object.entries(idx).filter(([id])=>!ids.has(id));console.log(o.length+' PDF orphelin(s) (fiche supprimée) :');o.forEach(([id,p])=>console.log('  /opt/fichesanitaire-voyages/fiches-pdf/'+p));})"
+docker exec fichesanitaire_app node -e "const fs=require('fs');const idx=JSON.parse(fs.readFileSync('/app/fiches-pdf/.index.json','utf8'));fetch('http://localhost:3000/api/data/cerfa_students_v11',{headers:{'X-Local-Tool':require('fs').readFileSync('/app/.local-tool-secret','utf8').trim()}}).then(r=>r.json()).then(j=>{const a=Array.isArray(j)?j:j.value;const ids=new Set(a.map(s=>s.id));const o=Object.entries(idx).filter(([id])=>!ids.has(id));console.log(o.length+' PDF orphelin(s) (fiche supprimée) :');o.forEach(([id,p])=>console.log('  /opt/fichesanitaire-voyages/fiches-pdf/'+p));})"
 ```
   Après vérification, supprimer les fichiers listés (`rm`), puis retirer leur entrée de `fiches-pdf/.index.json` ou relancer « Régénérer les PDF » ne recrée que les fiches complètes existantes.
+
+## Authentification du portail (build `auth-20261006`)
+- **Vérifier la protection** depuis un navigateur NON connecté : `https://VOTRE-SITE/api/data` ne doit renvoyer que des listes vides et les voyages (sans leur mot de passe) ; `/api/backups` doit répondre `{"error":"auth-required"}`.
+- **Si `patch-authentification.sh` s'arrête sur « repere(s) introuvable(s) »** : vos fichiers diffèrent de la version attendue. Rien n'a été modifié ; le script vérifie d'abord TOUS ses repères sur une copie et écrit la liste complète dans `/root/diagnostic-auth.txt` (à envoyer pour obtenir un script adapté).
+- **Outils d'exploitation** (`rattacher-fiche.sh`, commandes `docker exec … fetch('http://localhost:3000/api/…')`) : le serveur exige l'en-tête `X-Local-Tool` avec le secret du fichier `/app/.local-tool-secret` (créé au démarrage, lisible seulement dans le conteneur : `docker exec fichesanitaire_app cat /app/.local-tool-secret`). Les commandes ci-dessus le lisent elles-mêmes. Sans secret, l'outil reçoit « auth-required ».
+- **Durées et seuils** (variables du conteneur, facultatives) : `AUTH_SESSION_DAYS=30` (familles), `AUTH_STAFF_SESSION_DAYS=7` (professeurs, administration), `AUTH_CHAPERONE_HOURS=12`, `AUTH_MAX_FAILS=5` essais ratés puis blocage `AUTH_LOCK_MINUTES=15`, `MAGIC_LINK_DAYS=30`. Elles se règlent dans `docker-compose.yml` (section `environment`) puis `docker compose up -d`.
+- **Journal** : `docker compose logs app | grep "\[auth\]"` (connexions, échecs, blocages, conversions ; jamais de mot de passe ni de jeton).
+- **Débloquer quelqu'un** : le blocage dure 15 minutes ; `docker compose restart app` le lève immédiatement (les sessions ouvertes sont conservées).
+- **Mot de passe administrateur perdu** : réinitialisation par l'outil local, sans passer par l'interface :
+```bash
+docker exec fichesanitaire_app node -e "const s=require('fs').readFileSync('/app/.local-tool-secret','utf8').trim();const H={'Content-Type':'application/json','X-Local-Tool':s};(async()=>{const u=(await (await fetch('http://localhost:3000/api/data/cerfa_users_v1',{headers:H})).json()).value.find(x=>x.role==='admin');console.log('administrateur :',u.name,u.email);const r=await fetch('http://localhost:3000/api/users/upsert',{method:'POST',headers:H,body:JSON.stringify({user:{...u,password:'NOUVEAU_MOT_DE_PASSE_6_CARACTERES_MINIMUM'}})});console.log('HTTP',r.status)})()"
+```
+  (remplacer `NOUVEAU_MOT_DE_PASSE_…` avant de lancer ; changer ensuite le mot de passe depuis l'espace d'administration.)
+
