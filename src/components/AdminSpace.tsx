@@ -138,6 +138,27 @@ export const AdminSpace: React.FC<AdminSpaceProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'trips' | 'users' | 'classes' | 'establishment' | 'audit' | 'trash'>('overview');
   const [showPurgeModal, setShowPurgeModal] = useState(false);
+  // Vue d'ensemble : toutes les fiches ou seulement les incomplètes (préférence mémorisée dans ce navigateur) - build overview-filter-20261006
+  const [overviewFilter, setOverviewFilter] = useState<'all' | 'incomplete'>(() => {
+    try {
+      return localStorage.getItem('cerfa_overview_filter_v1') === 'incomplete' ? 'incomplete' : 'all';
+    } catch {
+      return 'all';
+    }
+  });
+  const changeOverviewFilter = (f: 'all' | 'incomplete') => {
+    setOverviewFilter(f);
+    try {
+      localStorage.setItem('cerfa_overview_filter_v1', f);
+    } catch {
+      /* stockage indisponible : le choix vaut pour cette page seulement */
+    }
+  };
+  React.useEffect(() => {
+    console.log('[fichesanitaire] build overview-filter-20261006');
+  }, []);
+  const overviewIncompleteCount = students.filter((s) => s.status === 'incomplete').length;
+  const overviewStudents = overviewFilter === 'incomplete' ? students.filter((s) => s.status === 'incomplete') : students;
   const [editEstablishmentName, setEditEstablishmentName] = useState(establishmentName);
   const [applyToExistingStudents, setApplyToExistingStudents] = useState(true);
   const [establishmentSavedFeedback, setEstablishmentSavedFeedback] = useState(false);
@@ -932,6 +953,36 @@ Cordialement,
               </div>
             </div>
 
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3" data-testid="overview-filter">
+              <div role="group" aria-label="Filtrer les fiches affichées" className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => changeOverviewFilter('all')}
+                  aria-pressed={overviewFilter === 'all'}
+                  data-testid="overview-filter-all"
+                  className={`px-3 py-1.5 cursor-pointer transition-colors ${
+                    overviewFilter === 'all' ? 'bg-blue-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Toutes les fiches ({students.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeOverviewFilter('incomplete')}
+                  aria-pressed={overviewFilter === 'incomplete'}
+                  data-testid="overview-filter-incomplete"
+                  className={`px-3 py-1.5 border-l border-slate-300 cursor-pointer transition-colors ${
+                    overviewFilter === 'incomplete' ? 'bg-amber-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Incomplètes seulement ({overviewIncompleteCount})
+                </button>
+              </div>
+              <span className="text-[11px] text-slate-500" data-testid="overview-filter-count">
+                {overviewStudents.length} fiche{overviewStudents.length > 1 ? 's' : ''} affichée{overviewStudents.length > 1 ? 's' : ''} sur {students.length}
+              </span>
+            </div>
+
             <div className="suivi-wrap">
               <table className="suivi-table w-full text-xs text-left border-collapse">
                 <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
@@ -949,7 +1000,16 @@ Cordialement,
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {students.map((s) => {
+                  {overviewStudents.length === 0 && (
+                    <tr data-testid="overview-filter-empty">
+                      <td colSpan={10} className="p-6 text-center text-sm font-semibold text-emerald-700">
+                        {overviewFilter === 'incomplete'
+                          ? 'Aucune fiche incomplète : toutes les fiches sont complètes.'
+                          : 'Aucune fiche enregistrée pour le moment.'}
+                      </td>
+                    </tr>
+                  )}
+                  {overviewStudents.map((s) => {
                     const paiDocs = s.cerfa.documents.filter((d) => d.type === 'pai');
                     const otherDocs = s.cerfa.documents.filter((d) => d.type !== 'pai');
 
