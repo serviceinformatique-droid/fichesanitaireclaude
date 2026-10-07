@@ -26,11 +26,11 @@ set -e
 
 APP_DIR="${APP_DIR:-/opt/fichesanitaire-voyages}"
 TOOLS_DIR="${TOOLS_DIR:-/root}"
-BUNDLE_VERSION="2026-10-05-8bf643ea"
-PAYLOAD_SHA256="e9d3b7fde305747c2c3c5e8d2a3104b3442fd6abd33899310d9af23ded224308"
+BUNDLE_VERSION="2026-10-05-15d3ce24"
+PAYLOAD_SHA256="82101785ced6e10ee6dbfe178a9e34dcbc211ad054826aa265e66d87d6ed8ca6"
 SELF="$0"
 
-PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression patch-messagerie-lecture patch-pdf-organisateurs patch-fin-annee patch-rgpd patch-fleches patch-corrections patch-mot-de-passe-parent patch-fiche-une-page patch-message-accueil patch-authentification patch-filtre-vue-ensemble"
+PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression patch-messagerie-lecture patch-pdf-organisateurs patch-fin-annee patch-rgpd patch-fleches patch-corrections patch-mot-de-passe-parent patch-fiche-une-page patch-message-accueil patch-authentification patch-filtre-vue-ensemble patch-journal-mises-a-jour"
 TOOLS="rattacher-fiche restaurer-sauvegarde"
 
 WORK=""
@@ -68,6 +68,7 @@ describe() {
     patch-message-accueil) echo "message d accueil : un seul compte par famille, bouton Ajouter un enfant";;
     patch-authentification) echo "authentification serveur : mots de passe hachés, sessions, données filtrées par rôle";;
     patch-filtre-vue-ensemble) echo "vue d ensemble : afficher toutes les fiches ou seulement les incompletes";;
+    patch-journal-mises-a-jour) echo "journal des mises a jour (admin) et cloche utile";;
   esac
 }
 
@@ -101,6 +102,7 @@ is_installed() {
     patch-message-accueil) grep -q "welcomeTextMigration" "$APP_DIR/server/index.js" 2>/dev/null;;
     patch-authentification) [ -f "$APP_DIR/server/auth.js" ];;
     patch-filtre-vue-ensemble) grep -q "cerfa_overview_filter_v1" "$APP_DIR/src/components/AdminSpace.tsx" 2>/dev/null;;
+    patch-journal-mises-a-jour) [ -f "$APP_DIR/server/changelog.js" ];;
     *) return 1;;
   esac
 }

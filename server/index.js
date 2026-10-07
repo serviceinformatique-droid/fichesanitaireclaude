@@ -28,6 +28,12 @@ const fsAuth = require('./auth').install(app, {
   commSendWelcome: (u) => commSendWelcome(u),
 });
 
+// --- Journal des mises à jour (build changelog-20261007) : voir server/changelog.js (route réservée à l'administration) ---
+const fsChangelog = require('./changelog').install(app, {
+  readKv: (k) => readKv(k),
+  writeKv: (k, v) => writeKv(k, v),
+});
+
 // --- Limite de taille des NOUVELLES pièces jointes (build attachments-limit-20261004) ---
 // Une pièce jointe de plus de ~2,2 Mo (3 000 000 caractères en base64) est refusée si elle est
 // nouvelle ou modifiée. Les pièces jointes déjà enregistrées restent modifiables : l'enregistrement
@@ -1883,7 +1889,7 @@ app.use((req, res) => {
 ensureTable()
   .then(() => {
     app.listen(PORT, '0.0.0.0', () => {
-      (console.log(`Serveur fiche sanitaire voyages sur le port ${PORT}`), fsAuth.migrate());
+      (console.log(`Serveur fiche sanitaire voyages sur le port ${PORT}`), fsAuth.migrate().then(() => fsChangelog.notify()));
       welcomeTextMigration();
     });
   })

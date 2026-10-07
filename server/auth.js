@@ -190,6 +190,18 @@ function install(app, deps) {
       }
     }, 800);
   };
+  // Sauvegarde immédiate des sessions à l'arrêt du serveur : une connexion de moins d'une seconde ne doit pas être perdue (build changelog-20261007)
+  const flushSessions = async () => {
+    if (!persistTimer) return;
+    clearTimeout(persistTimer);
+    persistTimer = null;
+    try {
+      await writeKv(K.sessions, [...sessions.values()]);
+    } catch (e) {
+      console.error('[auth] Sauvegarde des sessions impossible :', e.message);
+    }
+  };
+  ['SIGTERM', 'SIGINT'].forEach((sig) => process.once(sig, () => flushSessions().finally(() => process.exit(0))));
   async function loadSessions() {
     const list = (await readKv(K.sessions)) || [];
     const now = Date.now();

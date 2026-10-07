@@ -261,8 +261,8 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* Notification Bell */}
-            <div className="relative">
+            {/* Notification Bell : visible pour l'administration (avertie des mises à jour) ; masquée pour les autres rôles tant qu'ils n'ont rien à lire (build changelog-20261007) */}
+            <div className={currentUser.role === 'admin' || userNotifs.length > 0 ? 'relative' : 'hidden'}>
               <button
                 type="button"
                 onClick={() => setShowNotifs(!showNotifs)}

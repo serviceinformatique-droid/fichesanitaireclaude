@@ -5,6 +5,7 @@ import { formatDateFr, computeCerfaCompleteness } from '../utils/cerfaValidation
 import { openOrDownloadDocument } from '../utils/documentViewer';
 import { YearEndPanel } from './YearEndPanel';
 import { PdfRegenerator } from './PdfRegenerator';
+import { ChangelogPanel } from './ChangelogPanel';
 import {
   ShieldCheck,
   Users,
@@ -136,7 +137,7 @@ export const AdminSpace: React.FC<AdminSpaceProps> = ({
   onResetData,
   onPurgeDemo,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'trips' | 'users' | 'classes' | 'establishment' | 'audit' | 'trash'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'trips' | 'users' | 'classes' | 'establishment' | 'audit' | 'trash' | 'changelog'>('overview');
   const [showPurgeModal, setShowPurgeModal] = useState(false);
   // Vue d'ensemble : toutes les fiches ou seulement les incomplètes (préférence mémorisée dans ce navigateur) - build overview-filter-20261006
   const [overviewFilter, setOverviewFilter] = useState<'all' | 'incomplete'>(() => {
@@ -839,6 +840,7 @@ Cordialement,
           { id: 'classes', label: `Classes (${classes.length})`, icon: Building },
           { id: 'trash', label: `Corbeille (${trashedStudents.length})`, icon: Trash2 },
           { id: 'audit', label: 'Journal d audit & RGPD', icon: History },
+          { id: 'changelog', label: 'Mises à jour', icon: RefreshCw },
         ].map((tab) => {
           const Icon = tab.icon;
           return (
@@ -2981,6 +2983,8 @@ Cordialement,
           </div>
         </div>
       )}
+
+      {activeTab === 'changelog' && <ChangelogPanel />}
 
       {activeTab === 'audit' && (
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
