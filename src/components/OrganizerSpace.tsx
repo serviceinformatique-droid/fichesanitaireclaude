@@ -59,7 +59,27 @@ export const OrganizerSpace: React.FC<OrganizerSpaceProps> = ({
     return trips;
   }, [trips, currentUser]);
 
-  const currentTrip = availableTrips[0] || trips[0];
+  // Un professeur qui encadre plusieurs voyages choisit celui qu'il consulte ; le choix est mémorisé (par compte, dans ce navigateur) - build multi-trips-20261007
+  const tripChoiceKey = `cerfa_org_trip_${currentUser.id}_v1`;
+  const [selectedTripId, setSelectedTripId] = useState<string>(() => {
+    try {
+      return localStorage.getItem(tripChoiceKey) || '';
+    } catch {
+      return '';
+    }
+  });
+  const currentTrip = availableTrips.find((t) => t.id === selectedTripId) || availableTrips[0] || trips[0];
+  const chooseTrip = (id: string) => {
+    setSelectedTripId(id);
+    try {
+      localStorage.setItem(tripChoiceKey, id);
+    } catch {
+      /* stockage indisponible : le choix vaut pour cette page seulement */
+    }
+  };
+  React.useEffect(() => {
+    console.log('[fichesanitaire] build multi-trips-20261007');
+  }, []);
 
   const reportRef = useRef<HTMLDivElement>(null);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
@@ -92,6 +112,16 @@ export const OrganizerSpace: React.FC<OrganizerSpaceProps> = ({
   const [selectedDietFilter, setSelectedDietFilter] = useState('all');
   const [unlockedSensitiveStudentId, setUnlockedSensitiveStudentId] = useState<string | null>(null);
   const [selectedDetailStudent, setSelectedDetailStudent] = useState<Student | null>(null);
+  // changement de voyage : on repart de filtres vierges (une classe ou un régime d'un autre voyage n'aurait pas de sens)
+  React.useEffect(() => {
+    setActiveFilterView('all');
+    setKpiFilter('all');
+    setSearchQuery('');
+    setSelectedClassFilter('all');
+    setSelectedDietFilter('all');
+    setSelectedDetailStudent(null);
+    setUnlockedSensitiveStudentId(null);
+  }, [currentTrip?.id]);
   const [showHealthReportModal, setShowHealthReportModal] = useState(false);
   const [healthReportInitialSort, setHealthReportInitialSort] = useState<'alpha' | 'class'>('class');
 
@@ -281,6 +311,29 @@ export const OrganizerSpace: React.FC<OrganizerSpaceProps> = ({
               VOYAGE : {currentTrip.name}
             </h2>
           </div>
+          {availableTrips.length > 1 && (
+            <div className="flex flex-wrap items-center gap-2 mt-3" role="group" aria-label="Choisir le voyage à consulter" data-testid="organizer-trip-switch">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Mes voyages ({availableTrips.length}) :</span>
+              {availableTrips.map((t) => {
+                const n = students.filter((s) => !s.deletedAt && s.registeredTripIds.includes(t.id)).length;
+                const active = t.id === currentTrip.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => chooseTrip(t.id)}
+                    aria-pressed={active}
+                    data-testid={`organizer-trip-${t.id}`}
+                    className={`text-xs font-semibold px-3 py-1.5 rounded-lg border cursor-pointer transition-colors ${
+                      active ? 'bg-blue-900 text-white border-blue-900 shadow-xs' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    {t.name} · {n} élève{n > 1 ? 's' : ''}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <p className="text-xs text-slate-500 mt-1">
             Destination : <strong className="text-slate-700">{currentTrip.destination}</strong> • Dates : du {formatDateFr(currentTrip.startDate)} au {formatDateFr(currentTrip.endDate)}
           </p>
