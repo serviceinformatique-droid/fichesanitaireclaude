@@ -433,6 +433,139 @@ export async function generateTripHealthListPdf(trip: Trip, students: Student[],
 }
 
 // ----------------------------------------------------------------------------------------------
+// 1bis. Synthèse des régimes alimentaires (transmission traiteur & hébergement) - build diet-pdf-20261007
+//   UNIQUEMENT les régimes et allergies alimentaires, classés par catégorie : ni PAI, ni traitement, ni coordonnées.
+// ----------------------------------------------------------------------------------------------
+export interface DietSummaryPdfOptions {
+  establishmentName?: string;
+  filename?: string;
+}
+
+const DIET_ORDER: { key: string; label: string; tone: 'red' | 'amber' | 'blue' | 'green' }[] = [
+  { key: 'allergie_alimentaire', label: 'Allergie alimentaire', tone: 'red' },
+  { key: 'sans_porc', label: 'Sans porc', tone: 'amber' },
+  { key: 'sans_viande', label: 'Sans viande', tone: 'amber' },
+  { key: 'vegetarien', label: 'Végétarien', tone: 'amber' },
+  { key: 'standard', label: 'Sans restriction', tone: 'green' },
+];
+
+export async function generateDietSummaryPdf(trip: Trip, students: Student[], opts: DietSummaryPdfOptions = {}): Promise<boolean> {
+  try {
+    const establishment = (opts.establishmentName || getStoredEstablishmentName() || '').trim();
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    installPdfSafety(doc);
+
+    const list = students.filter((s) => !(s as any).deletedAt).sort(byName);
+    const catOf = (s: Student): string => {
+      const c = String(s.cerfa.structuredDiet?.category || '');
+      return DIET_ORDER.some((d) => d.key === c) ? c : 'standard';
+    };
+    const foodAllergy = (s: Student): boolean => !!(s.cerfa.medicalInfo as any)?.allergies?.alimentaires;
+    const conduite = (s: Student): string => String((s.cerfa.medicalInfo as any)?.allergyCauseAndAction || '').trim();
+    const groups = DIET_ORDER.map((d) => ({ ...d, students: list.filter((s) => catOf(s) === d.key) }));
+    const suspicious = list.filter((s) => catOf(s) === 'standard' && foodAllergy(s));
+
+    const columns: Column[] = [
+      { label: 'N°', w: 9, align: 'center' },
+      { label: 'Élève (nom & prénom)', w: 62 },
+      { label: 'Classe', w: 20, align: 'center' },
+      { label: 'Pension', w: 22, align: 'center' },
+      { label: 'Précisions du régime', w: 80 },
+      { label: 'Allergie alimentaire : cause & conduite à tenir', w: 88 },
+    ];
+
+    const TITLE = 'SYNTHÈSE DES RÉGIMES ALIMENTAIRES';
+    let first = true;
+    const pageHeader = (): number => {
+      let y = MARGIN;
+      doc.setFont('helvetica', 'bold');
+      if (first) {
+        doc.setFontSize(7);
+        setInk(doc, GRAY);
+        doc.text(establishment.toUpperCase(), MARGIN, y + 2);
+        doc.setFontSize(15);
+        setInk(doc, INK);
+        doc.text(TITLE, MARGIN, y + 9);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        setInk(doc, BLUE);
+        doc.text('Transmission traiteur & hébergement', MARGIN, y + 14);
+        doc.setFontSize(8.5);
+        setInk(doc, [51, 65, 85]);
+        doc.text(`Voyage : ${trip.name} — ${trip.destination} — du ${formatDateFr(trip.startDate)} au ${formatDateFr(trip.endDate)}`, MARGIN, y + 19);
+        const chips: { label: string; value: string; tone?: 'red' | 'green' | 'amber' | 'blue' }[] = [{ label: 'Effectif du voyage', value: String(list.length), tone: 'blue' }];
+        groups.forEach((g) => chips.push({ label: g.label, value: String(g.students.length), tone: g.students.length ? g.tone : 'green' }));
+        y = drawChips(doc, y + 22, chips);
+        if (suspicious.length) {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8);
+          setInk(doc, RED);
+          doc.text(
+            `ATTENTION : ${suspicious.length} élève${suspicious.length > 1 ? 's ont' : ' a'} une allergie alimentaire déclarée dans la fiche sanitaire alors que ${suspicious.length > 1 ? 'leur' : 'son'} régime est « Sans restriction » (${suspicious.length > 1 ? 'lignes' : 'ligne'} en rouge, à vérifier).`,
+            MARGIN,
+            y + 2
+          );
+          y += 6;
+        }
+        first = false;
+      } else {
+        doc.setFontSize(8.5);
+        setInk(doc, INK);
+        doc.text(`${TITLE} — ${trip.name} (suite)`, MARGIN, y + 3);
+        y += 7;
+      }
+      return y;
+    };
+
+    const rows: TableRow[] = [];
+    groups.forEach((g) => {
+      if (!g.students.length) return;
+      rows.push({ group: g.label, count: g.students.length });
+      g.students.forEach((s, i) => {
+        const details = String(s.cerfa.structuredDiet?.details || '').trim();
+        const reco = String(s.cerfa.parentRecommendations || '').trim();
+        const flagged = foodAllergy(s);
+        const precision: TextLine[] = [];
+        if (details) precision.push({ text: details, bold: true, size: 8.5, color: g.key === 'standard' ? INK : BLUE });
+        if (reco) precision.push({ text: `Remarque des parents : ${reco}`, italic: true, size: 7.5, color: GRAY });
+        if (!precision.length) precision.push({ text: g.key === 'standard' ? '—' : 'Aucune précision saisie', size: 8, color: GRAY });
+        const allergy: TextLine[] = [];
+        if (g.key === 'standard' && flagged) allergy.push({ text: 'À VÉRIFIER : régime « Sans restriction » malgré une allergie déclarée', bold: true, size: 7.5, color: RED });
+        if (flagged) {
+          allergy.push({ text: 'ALLERGIE ALIMENTAIRE', bold: true, size: 8.5, color: RED });
+          allergy.push({ text: conduite(s) || 'Cause et conduite à tenir non renseignées : consulter la fiche sanitaire.', size: 7.5, color: [127, 29, 29] });
+        } else if (g.key === 'allergie_alimentaire') {
+          allergy.push({ text: 'Allergie à préciser : consulter la fiche sanitaire.', bold: true, size: 8, color: [146, 64, 14] });
+        } else {
+          allergy.push({ text: '—', size: 9, color: GRAY });
+        }
+        rows.push({
+          fill: flagged ? [255, 245, 245] : undefined,
+          cells: [
+            { lines: [{ text: String(i + 1), size: 8, color: GRAY }], align: 'center' },
+            { lines: [{ text: fullName(s), bold: true, size: 9 }] },
+            { lines: [{ text: s.schoolClass || '—', bold: true, size: 9 }], align: 'center' },
+            { lines: [{ text: s.boardingStatus || '—', size: 8.5 }], align: 'center' },
+            { lines: precision },
+            { lines: allergy },
+          ],
+        });
+      });
+    });
+    if (!rows.length) rows.push({ cells: [{}, { lines: [{ text: 'Aucun élève inscrit à ce voyage.', italic: true, size: 9, color: GRAY }] }, {}, {}, {}, {}] });
+
+    drawTable(doc, columns, rows, pageHeader(), pageHeader);
+    drawFooters(doc, `${establishment} — ${trip.name}`);
+
+    doc.save(opts.filename || `Synthese_Regimes_${safeName(trip.name)}.pdf`);
+    return true;
+  } catch (error) {
+    console.error('Erreur lors de la génération du PDF (synthèse des régimes alimentaires) :', error);
+    return false;
+  }
+}
+
+// ----------------------------------------------------------------------------------------------
 // 2. Relevé sanitaire du séjour (espace organisateur)
 // ----------------------------------------------------------------------------------------------
 export interface OrganizerReportPdfOptions {

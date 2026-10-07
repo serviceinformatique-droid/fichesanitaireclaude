@@ -26,11 +26,11 @@ set -e
 
 APP_DIR="${APP_DIR:-/opt/fichesanitaire-voyages}"
 TOOLS_DIR="${TOOLS_DIR:-/root}"
-BUNDLE_VERSION="2026-10-05-66f537e2"
-PAYLOAD_SHA256="058ce8795eed38518dfbcea174a5d35395811744aecc401c09a1a62639119095"
+BUNDLE_VERSION="2026-10-05-58f41061"
+PAYLOAD_SHA256="8ee4b3e1851bc19c49312a89053225fb78c118cdaede9bdc639f0f8b3f08da98"
 SELF="$0"
 
-PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression patch-messagerie-lecture patch-pdf-organisateurs patch-fin-annee patch-rgpd patch-fleches patch-corrections patch-mot-de-passe-parent patch-fiche-une-page patch-message-accueil patch-authentification patch-filtre-vue-ensemble patch-journal-mises-a-jour patch-professeur-plusieurs-voyages"
+PATCHES="patch-pdf-archive patch-doublons patch-brouillon patch-anti-ecrasement patch-messagerie patch-accueil patch-ui-signature patch-parent-guard patch-comptes patch-stockage patch-pieces-jointes patch-etablissement patch-regeneration-pdf patch-messagerie-icone patch-pdf-sante patch-messagerie-suppression patch-messagerie-lecture patch-pdf-organisateurs patch-fin-annee patch-rgpd patch-fleches patch-corrections patch-mot-de-passe-parent patch-fiche-une-page patch-message-accueil patch-authentification patch-filtre-vue-ensemble patch-journal-mises-a-jour patch-professeur-plusieurs-voyages patch-pdf-regimes"
 TOOLS="rattacher-fiche restaurer-sauvegarde"
 
 WORK=""
@@ -70,6 +70,7 @@ describe() {
     patch-filtre-vue-ensemble) echo "vue d ensemble : afficher toutes les fiches ou seulement les incompletes";;
     patch-journal-mises-a-jour) echo "journal des mises a jour (admin) et cloche utile";;
     patch-professeur-plusieurs-voyages) echo "professeur avec plusieurs voyages : selecteur de voyage";;
+    patch-pdf-regimes) echo "PDF de la synthese des regimes alimentaires (traiteur et hebergement)";;
   esac
 }
 
@@ -105,6 +106,7 @@ is_installed() {
     patch-filtre-vue-ensemble) grep -q "cerfa_overview_filter_v1" "$APP_DIR/src/components/AdminSpace.tsx" 2>/dev/null;;
     patch-journal-mises-a-jour) [ -f "$APP_DIR/server/changelog.js" ];;
     patch-professeur-plusieurs-voyages) grep -q "cerfa_org_trip_" "$APP_DIR/src/components/OrganizerSpace.tsx" 2>/dev/null;;
+    patch-pdf-regimes) grep -q "generateDietSummaryPdf" "$APP_DIR/src/utils/organizerPdf.ts" 2>/dev/null;;
     *) return 1;;
   esac
 }

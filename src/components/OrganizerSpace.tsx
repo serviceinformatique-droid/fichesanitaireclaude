@@ -3,7 +3,7 @@ import { Student, Trip, User, DietCategory } from '../types';
 import { exportTripCsv } from '../utils/storage';
 import { exportToPdf } from '../utils/pdfGenerator';
 import { authChangePassword } from '../utils/auth';
-import { generateOrganizerReportPdf } from '../utils/organizerPdf';
+import { generateOrganizerReportPdf, generateDietSummaryPdf } from '../utils/organizerPdf';
 import { formatDateFr } from '../utils/cerfaValidation';
 import { openOrDownloadDocument } from '../utils/documentViewer';
 import { TripHealthListModal } from './TripHealthListModal';
@@ -83,6 +83,19 @@ export const OrganizerSpace: React.FC<OrganizerSpaceProps> = ({
 
   const reportRef = useRef<HTMLDivElement>(null);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  // PDF « Synthèse des régimes alimentaires » (transmission traiteur & hébergement), classé par catégorie - build diet-pdf-20261007
+  const [isExportingDietPdf, setIsExportingDietPdf] = useState(false);
+  const handleDietPdf = async () => {
+    setIsExportingDietPdf(true);
+    try {
+      const ok = await generateDietSummaryPdf(currentTrip, enrolledStudents, {
+        filename: `Synthese_Regimes_${currentTrip.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`,
+      });
+      if (!ok) window.alert("Le PDF de la synthèse des régimes alimentaires n'a pas pu être généré. Réessayez dans un instant.");
+    } finally {
+      setIsExportingDietPdf(false);
+    }
+  };
 
   const handleDownloadPdf = async () => {
     if (!reportRef.current) return;
@@ -385,6 +398,18 @@ export const OrganizerSpace: React.FC<OrganizerSpaceProps> = ({
 
           <button
             type="button"
+            onClick={handleDietPdf}
+            disabled={isExportingDietPdf}
+            data-testid="diet-pdf-button-header"
+            className="flex items-center gap-1.5 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-60 text-slate-700 text-xs font-semibold px-3 py-2 rounded-lg shadow-xs transition-colors cursor-pointer"
+            title="PDF de la seule synthèse des régimes alimentaires, classée par catégorie (traiteur et hébergement)"
+          >
+            <Utensils className="w-4 h-4 text-blue-700" />
+            <span>{isExportingDietPdf ? 'Génération PDF...' : 'PDF Régimes alimentaires'}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => window.print()}
             className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold px-3 py-2 rounded-lg border border-slate-300 transition-colors cursor-pointer"
             title="Imprimer directement"
@@ -648,6 +673,17 @@ export const OrganizerSpace: React.FC<OrganizerSpaceProps> = ({
                 Décompte par régime alimentaire structuré pour la commande des repas du voyage.
               </p>
             </div>
+            <button
+              type="button"
+              onClick={handleDietPdf}
+              disabled={isExportingDietPdf}
+              data-testid="diet-pdf-button"
+              className="flex items-center gap-1.5 bg-blue-900 hover:bg-blue-950 disabled:opacity-60 text-white text-xs font-semibold px-3 py-2 rounded-lg shadow-xs transition-colors cursor-pointer shrink-0"
+              title="Télécharger un PDF contenant uniquement cette synthèse (classée par catégorie) pour le traiteur et l'hébergement"
+            >
+              <Download className="w-4 h-4" />
+              <span>{isExportingDietPdf ? 'Génération PDF...' : 'PDF : synthèse des régimes (traiteur)'}</span>
+            </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
