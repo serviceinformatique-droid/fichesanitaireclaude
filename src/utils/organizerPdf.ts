@@ -494,8 +494,16 @@ export async function generateDietSummaryPdf(trip: Trip, students: Student[], op
         setInk(doc, [51, 65, 85]);
         doc.text(`Voyage : ${trip.name} — ${trip.destination} — du ${formatDateFr(trip.startDate)} au ${formatDateFr(trip.endDate)}`, MARGIN, y + 19);
         const chips: { label: string; value: string; tone?: 'red' | 'green' | 'amber' | 'blue' }[] = [{ label: 'Effectif du voyage', value: String(list.length), tone: 'blue' }];
-        groups.forEach((g) => chips.push({ label: g.label, value: String(g.students.length), tone: g.students.length ? g.tone : 'green' }));
+        const special = groups.filter((g) => g.key !== 'standard');
+        chips.push({ label: 'Régimes particuliers', value: String(special.reduce((n, g) => n + g.students.length, 0)), tone: 'blue' });
+        special.forEach((g) => chips.push({ label: g.label, value: String(g.students.length), tone: g.students.length ? g.tone : 'green' }));
         y = drawChips(doc, y + 22, chips);
+        const unlisted = (groups.find((g) => g.key === 'standard')?.students.length || 0) - suspicious.length;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        setInk(doc, GRAY);
+        doc.text(`Les élèves sans restriction alimentaire ne sont pas listés (${unlisted} élève${unlisted > 1 ? 's' : ''}).`, MARGIN, y + 2);
+        y += 5;
         if (suspicious.length) {
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(8);
@@ -519,9 +527,11 @@ export async function generateDietSummaryPdf(trip: Trip, students: Student[], op
 
     const rows: TableRow[] = [];
     groups.forEach((g) => {
-      if (!g.students.length) return;
-      rows.push({ group: g.label, count: g.students.length });
-      g.students.forEach((s, i) => {
+      // les élèves « Sans restriction » ne sont pas listés ; seuls ceux dont la fiche déclare une allergie alimentaire restent signalés (à vérifier)
+      const shown = g.key === 'standard' ? g.students.filter(foodAllergy) : g.students;
+      if (!shown.length) return;
+      rows.push({ group: g.key === 'standard' ? 'À vérifier : allergie alimentaire déclarée malgré le régime « Sans restriction »' : g.label, count: shown.length });
+      shown.forEach((s, i) => {
         const details = String(s.cerfa.structuredDiet?.details || '').trim();
         const reco = String(s.cerfa.parentRecommendations || '').trim();
         const flagged = foodAllergy(s);
@@ -552,7 +562,7 @@ export async function generateDietSummaryPdf(trip: Trip, students: Student[], op
         });
       });
     });
-    if (!rows.length) rows.push({ cells: [{}, { lines: [{ text: 'Aucun élève inscrit à ce voyage.', italic: true, size: 9, color: GRAY }] }, {}, {}, {}, {}] });
+    if (!rows.length) rows.push({ cells: [{}, { lines: [{ text: list.length ? 'Aucun régime particulier ni allergie alimentaire déclarés pour ce voyage.' : 'Aucun élève inscrit à ce voyage.', italic: true, size: 9, color: GRAY }] }, {}, {}, {}, {}] });
 
     drawTable(doc, columns, rows, pageHeader(), pageHeader);
     drawFooters(doc, `${establishment} — ${trip.name}`);
